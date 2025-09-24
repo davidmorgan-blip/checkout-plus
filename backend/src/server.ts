@@ -1,0 +1,93 @@
+import express from 'express';
+import cors from 'cors';
+import { database } from './utils/database';
+import uploadRoutes from './routes/upload';
+import analyticsRoutes from './routes/analytics';
+import netRevenueRoutes from './routes/net-revenue';
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.use('/api/upload', uploadRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/net-revenue', netRevenueRoutes);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// Basic API info
+app.get('/api', (req, res) => {
+  res.json({
+    name: 'Checkout+ Dashboard API',
+    version: '1.0.0',
+    endpoints: {
+      upload: {
+        opportunities: 'POST /api/upload/opportunities',
+        performance: 'POST /api/upload/performance',
+        seasonality: 'POST /api/upload/seasonality',
+        status: 'GET /api/upload/status'
+      },
+      analytics: {
+        netRevenue: 'GET /api/analytics/net-revenue'
+      }
+    }
+  });
+});
+
+// Error handling middleware
+app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Server error:', error);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    details: process.env.NODE_ENV === 'development' ? error.message : undefined
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Endpoint not found'
+  });
+});
+
+// Initialize database and start server
+async function startServer() {
+  try {
+    await database.initialize();
+    console.log('Database initialized successfully');
+
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Health check: http://localhost:${PORT}/health`);
+      console.log(`API info: http://localhost:${PORT}/api`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT, shutting down gracefully...');
+  await database.close();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, shutting down gracefully...');
+  await database.close();
+  process.exit(0);
+});
+
+startServer();
