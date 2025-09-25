@@ -22,7 +22,9 @@ import {
   Tooltip,
   IconButton,
   FormControlLabel,
-  Checkbox
+  Checkbox,
+  TextField,
+  Autocomplete
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -30,9 +32,11 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import DownloadIcon from '@mui/icons-material/Download';
 import WarningIcon from '@mui/icons-material/Warning';
+import LaunchIcon from '@mui/icons-material/Launch';
 
 interface NetRevenueData {
   accountId: string;
+  opportunityId: string;
   accountName: string;
   pricingModel: string;
   labelsPaidBy: string;
@@ -57,6 +61,40 @@ interface NetRevenueData {
 
 interface NetRevenueAnalysisProps {}
 
+// Helper function to render merchant name with SFDC links
+const renderMerchantWithLinks = (merchantName: string, accountId: string, opportunityId: string, pricingInfo?: string) => (
+  <Box>
+    <Box display="flex" alignItems="center" gap={0.5}>
+      <Typography variant="body2" fontWeight="medium">
+        {merchantName}
+      </Typography>
+      <Tooltip title="View SFDC Account">
+        <IconButton
+          size="small"
+          sx={{ padding: '2px' }}
+          onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Account/${accountId}/view`, '_blank')}
+        >
+          <LaunchIcon sx={{ fontSize: 12, color: 'primary.main' }} />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="View SFDC Opportunity">
+        <IconButton
+          size="small"
+          sx={{ padding: '2px' }}
+          onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Opportunity/${opportunityId}/view`, '_blank')}
+        >
+          <LaunchIcon sx={{ fontSize: 12, color: 'secondary.main' }} />
+        </IconButton>
+      </Tooltip>
+    </Box>
+    {pricingInfo && (
+      <Typography variant="caption" color="textSecondary">
+        {pricingInfo}
+      </Typography>
+    )}
+  </Box>
+);
+
 export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const [data, setData] = useState<NetRevenueData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,6 +102,82 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const [daysLiveFilter, setDaysLiveFilter] = useState('all');
   const [exporting, setExporting] = useState(false);
   const [necessaryChangesOnly, setNecessaryChangesOnly] = useState(true);
+  const [adjustmentStatusFilter, setAdjustmentStatusFilter] = useState('all');
+  const [revenueVarianceFilter, setRevenueVarianceFilter] = useState('all');
+  const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
+
+  // Filter data based on adjustment status, revenue variance, and merchant name
+  const getFilteredData = () => {
+    if (!data) return [];
+
+    let filtered = data;
+
+    // Apply adjustment status filter
+    if (adjustmentStatusFilter !== 'all') {
+      if (adjustmentStatusFilter === 'pending') {
+        filtered = filtered.filter(d => d.adjustmentStatus.startsWith('Pending'));
+      } else {
+        filtered = filtered.filter(d => d.adjustmentStatus === adjustmentStatusFilter);
+      }
+    }
+
+    // Apply revenue variance filter
+    if (revenueVarianceFilter !== 'all') {
+      filtered = filtered.filter(d => {
+        const tier = getRevenueVarianceTier(d);
+        return tier === revenueVarianceFilter;
+      });
+    }
+
+    // Apply merchant filter
+    if (merchantFilter) {
+      filtered = filtered.filter(d => d.accountName === merchantFilter);
+    }
+
+    return filtered;
+  };
+
+  // Get unique merchant names for autocomplete
+  const getMerchantOptions = () => {
+    if (!data) return [];
+    const merchantNames = data.map(d => d.accountName).filter(Boolean);
+    return Array.from(new Set(merchantNames)).sort();
+  };
+
+  // Calculate revenue variance performance tier
+  const getRevenueVarianceTier = (merchant: NetRevenueData): string => {
+    if (!merchant.revenueVariancePercent) return 'unknown';
+    const variancePercent = merchant.revenueVariancePercent;
+    if (variancePercent > 10) return 'exceeding';
+    if (variancePercent >= -10) return 'meeting';
+    if (variancePercent >= -20) return 'below';
+    return 'significantly_below';
+  };
+
+  // Calculate counts for each status
+  const getStatusCounts = () => {
+    if (!data) return { all: 0, adjusted: 0, pending: 0, notAdjusted: 0 };
+
+    return {
+      all: data.length,
+      adjusted: data.filter(d => d.adjustmentStatus === 'Adjusted').length,
+      pending: data.filter(d => d.adjustmentStatus.startsWith('Pending')).length,
+      notAdjusted: data.filter(d => d.adjustmentStatus === 'Not Adjusted').length
+    };
+  };
+
+  // Calculate counts for each revenue variance tier
+  const getRevenueVarianceCounts = () => {
+    if (!data) return { all: 0, exceeding: 0, meeting: 0, below: 0, significantly_below: 0 };
+
+    return {
+      all: data.length,
+      exceeding: data.filter(d => getRevenueVarianceTier(d) === 'exceeding').length,
+      meeting: data.filter(d => getRevenueVarianceTier(d) === 'meeting').length,
+      below: data.filter(d => getRevenueVarianceTier(d) === 'below').length,
+      significantly_below: data.filter(d => getRevenueVarianceTier(d) === 'significantly_below').length
+    };
+  };
 
   const fetchNetRevenueData = async () => {
     try {
@@ -174,7 +288,8 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   };
 
   const calculateSummaryStats = () => {
-    if (!data || !Array.isArray(data) || data.length === 0) {
+    const filteredData = getFilteredData();
+    if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
       return {
         totalExpected: 0,
         totalActual: 0,
@@ -190,20 +305,20 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
       };
     }
 
-    const totalExpected = data.reduce((sum, row) => sum + (row.expectedAnnualRevenue || 0), 0);
-    const totalActual = data.reduce((sum, row) => sum + (row.actualAnnualRevenue || 0), 0);
+    const totalExpected = filteredData.reduce((sum, row) => sum + (row.expectedAnnualRevenue || 0), 0);
+    const totalActual = filteredData.reduce((sum, row) => sum + (row.actualAnnualRevenue || 0), 0);
     const totalVariance = totalActual - totalExpected;
-    const avgVariance = data.reduce((sum, row) => sum + (row.revenueVariancePercent || 0), 0) / data.length;
+    const avgVariance = filteredData.reduce((sum, row) => sum + (row.revenueVariancePercent || 0), 0) / filteredData.length;
 
-    const totalVolumeContribution = data.reduce((sum, row) => sum + (row.volumeContribution || 0), 0);
-    const totalAdoptionContribution = data.reduce((sum, row) => sum + (row.adoptionContribution || 0), 0);
-    const totalInteractionContribution = data.reduce((sum, row) => sum + (row.interactionContribution || 0), 0);
+    const totalVolumeContribution = filteredData.reduce((sum, row) => sum + (row.volumeContribution || 0), 0);
+    const totalAdoptionContribution = filteredData.reduce((sum, row) => sum + (row.adoptionContribution || 0), 0);
+    const totalInteractionContribution = filteredData.reduce((sum, row) => sum + (row.interactionContribution || 0), 0);
 
-    const totalVolumeExpected = data.reduce((sum, row) => sum + (row.volumeExpected || 0), 0);
-    const totalVolumeActual = data.reduce((sum, row) => sum + (row.volumeActual || 0), 0);
+    const totalVolumeExpected = filteredData.reduce((sum, row) => sum + (row.volumeExpected || 0), 0);
+    const totalVolumeActual = filteredData.reduce((sum, row) => sum + (row.volumeActual || 0), 0);
 
-    const avgAdoptionExpected = data.reduce((sum, row) => sum + (row.adoptionRateExpected || 0), 0) / data.length;
-    const avgAdoptionActual = data.reduce((sum, row) => sum + (row.adoptionRateActual || 0), 0) / data.length;
+    const avgAdoptionExpected = filteredData.reduce((sum, row) => sum + (row.adoptionRateExpected || 0), 0) / filteredData.length;
+    const avgAdoptionActual = filteredData.reduce((sum, row) => sum + (row.adoptionRateActual || 0), 0) / filteredData.length;
 
     return {
       totalExpected,
@@ -264,6 +379,23 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
               <MenuItem value="90">90+ Days Live</MenuItem>
             </Select>
           </FormControl>
+          <Autocomplete
+            sx={{ minWidth: 250 }}
+            options={getMerchantOptions()}
+            value={merchantFilter}
+            onChange={(event, newValue) => setMerchantFilter(newValue)}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Filter by Merchant"
+                placeholder="Search merchants..."
+                size="medium"
+              />
+            )}
+            clearOnBlur={false}
+            clearOnEscape
+            freeSolo={false}
+          />
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Button
               variant="contained"
@@ -376,6 +508,93 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
             </Tooltip>
           </Box>
 
+          {/* Filter Chips - Side by Side Layout */}
+          <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
+            {/* Adjustment Status Filter Chips */}
+            <Paper sx={{ p: 3, flex: 1 }}>
+              <Typography variant="h6" gutterBottom>
+                Adjustment Status Filter
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Chip
+                  label={`All: ${getStatusCounts().all}`}
+                  color="primary"
+                  variant={adjustmentStatusFilter === 'all' ? 'filled' : 'outlined'}
+                  onClick={() => setAdjustmentStatusFilter('all')}
+                  clickable
+                />
+                <Chip
+                  label={`Adjusted: ${getStatusCounts().adjusted}`}
+                  color="error"
+                  variant={adjustmentStatusFilter === 'Adjusted' ? 'filled' : 'outlined'}
+                  onClick={() => setAdjustmentStatusFilter('Adjusted')}
+                  clickable
+                />
+                <Chip
+                  label={`Not Adjusted: ${getStatusCounts().notAdjusted}`}
+                  color="success"
+                  variant={adjustmentStatusFilter === 'Not Adjusted' ? 'filled' : 'outlined'}
+                  onClick={() => setAdjustmentStatusFilter('Not Adjusted')}
+                  clickable
+                />
+                <Chip
+                  label={`Pending: ${getStatusCounts().pending}`}
+                  color="warning"
+                  variant={adjustmentStatusFilter === 'pending' ? 'filled' : 'outlined'}
+                  onClick={() => setAdjustmentStatusFilter('pending')}
+                  clickable
+                />
+              </Box>
+            </Paper>
+
+            {/* Revenue Variance Filter Chips */}
+            <Paper sx={{ p: 3, flex: 1 }}>
+              <Typography variant="h6" gutterBottom>
+                Revenue Variance Filter
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Chip
+                  label={`All: ${getRevenueVarianceCounts().all}`}
+                  color="primary"
+                  variant={revenueVarianceFilter === 'all' ? 'filled' : 'outlined'}
+                  onClick={() => setRevenueVarianceFilter('all')}
+                  clickable
+                />
+                <Chip
+                  label={`Exceeding: ${getRevenueVarianceCounts().exceeding}`}
+                  color="success"
+                  variant={revenueVarianceFilter === 'exceeding' ? 'filled' : 'outlined'}
+                  onClick={() => setRevenueVarianceFilter('exceeding')}
+                  clickable
+                />
+                <Chip
+                  label={`Meeting: ${getRevenueVarianceCounts().meeting}`}
+                  color="info"
+                  variant={revenueVarianceFilter === 'meeting' ? 'filled' : 'outlined'}
+                  onClick={() => setRevenueVarianceFilter('meeting')}
+                  clickable
+                />
+                <Chip
+                  label={`Below: ${getRevenueVarianceCounts().below}`}
+                  color="warning"
+                  variant={revenueVarianceFilter === 'below' ? 'filled' : 'outlined'}
+                  onClick={() => setRevenueVarianceFilter('below')}
+                  clickable
+                />
+                <Chip
+                  label={`Significantly Below: ${getRevenueVarianceCounts().significantly_below}`}
+                  color="error"
+                  variant={revenueVarianceFilter === 'significantly_below' ? 'filled' : 'outlined'}
+                  onClick={() => setRevenueVarianceFilter('significantly_below')}
+                  clickable
+                />
+              </Box>
+              <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                Exceeding: &gt;10% • Meeting: ±10% • Below: -10% to -20% • Significantly Below: &gt;-20%
+              </Typography>
+            </Paper>
+          </Box>
+
           <TableContainer component={Paper}>
             <Table>
               <TableHead>
@@ -397,7 +616,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                   <TableRow sx={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
                     <TableCell>
                       <Typography variant="body2" fontWeight="bold">
-                        TOTAL ({data.length} merchants)
+                        TOTAL ({getFilteredData().length} merchants)
                       </Typography>
                       <Typography variant="caption" color="textSecondary">
                         Aggregated Performance
@@ -458,25 +677,23 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                     </TableCell>
                     <TableCell align="center">
                       <Typography variant="body2" fontWeight="medium">
-                        {data.filter(d => d.adjustmentStatus === 'Adjusted').length} Adjusted, {data.filter(d => d.adjustmentStatus.startsWith('Pending')).length} Pending, {data.filter(d => d.adjustmentStatus === 'Not Adjusted').length} Not Adjusted
+                        —
                       </Typography>
                     </TableCell>
                   </TableRow>
                 )}
-                {Array.isArray(data) ? data
+                {Array.isArray(data) ? getFilteredData()
                   .sort((a, b) => Math.abs((b.revenueVariance || 0)) - Math.abs((a.revenueVariance || 0)))
                   .map((row) => (
                     <TableRow key={row.accountId} hover>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Box>
-                            <Typography variant="body2" fontWeight="medium">
-                              {row.accountName || 'N/A'}
-                            </Typography>
-                            <Typography variant="caption" color="textSecondary">
-                              {formatPricingInfo(row.pricingModel || 'Unknown', row.labelsPaidBy || '')}
-                            </Typography>
-                          </Box>
+                          {renderMerchantWithLinks(
+                            row.accountName || 'N/A',
+                            row.accountId,
+                            row.opportunityId,
+                            formatPricingInfo(row.pricingModel || 'Unknown', row.labelsPaidBy || '')
+                          )}
                           {(row.adoptionRateActual < 1) && (
                             <Tooltip title="Very low adoption rate (<1%) - may indicate systemic issues requiring investigation">
                               <WarningIcon color="warning" sx={{ fontSize: 20 }} />
