@@ -42,6 +42,9 @@ interface NetRevenueData {
   volumeExpected: number;
   volumeActual: number;
   volumeVariance: number;
+  volumeContribution: number;
+  adoptionContribution: number;
+  interactionContribution: number;
   implementationStatus: string;
   daysLive: number;
 }
@@ -127,7 +130,19 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
 
   const calculateSummaryStats = () => {
     if (!data || !Array.isArray(data) || data.length === 0) {
-      return { totalExpected: 0, totalActual: 0, totalVariance: 0, avgVariance: 0 };
+      return {
+        totalExpected: 0,
+        totalActual: 0,
+        totalVariance: 0,
+        avgVariance: 0,
+        totalVolumeContribution: 0,
+        totalAdoptionContribution: 0,
+        totalInteractionContribution: 0,
+        totalVolumeExpected: 0,
+        totalVolumeActual: 0,
+        avgAdoptionExpected: 0,
+        avgAdoptionActual: 0
+      };
     }
 
     const totalExpected = data.reduce((sum, row) => sum + (row.expectedAnnualRevenue || 0), 0);
@@ -135,7 +150,29 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     const totalVariance = totalActual - totalExpected;
     const avgVariance = data.reduce((sum, row) => sum + (row.revenueVariancePercent || 0), 0) / data.length;
 
-    return { totalExpected, totalActual, totalVariance, avgVariance };
+    const totalVolumeContribution = data.reduce((sum, row) => sum + (row.volumeContribution || 0), 0);
+    const totalAdoptionContribution = data.reduce((sum, row) => sum + (row.adoptionContribution || 0), 0);
+    const totalInteractionContribution = data.reduce((sum, row) => sum + (row.interactionContribution || 0), 0);
+
+    const totalVolumeExpected = data.reduce((sum, row) => sum + (row.volumeExpected || 0), 0);
+    const totalVolumeActual = data.reduce((sum, row) => sum + (row.volumeActual || 0), 0);
+
+    const avgAdoptionExpected = data.reduce((sum, row) => sum + (row.adoptionRateExpected || 0), 0) / data.length;
+    const avgAdoptionActual = data.reduce((sum, row) => sum + (row.adoptionRateActual || 0), 0) / data.length;
+
+    return {
+      totalExpected,
+      totalActual,
+      totalVariance,
+      avgVariance,
+      totalVolumeContribution,
+      totalAdoptionContribution,
+      totalInteractionContribution,
+      totalVolumeExpected,
+      totalVolumeActual,
+      avgAdoptionExpected,
+      avgAdoptionActual
+    };
   };
 
   const summaryStats = calculateSummaryStats();
@@ -273,11 +310,78 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                   <TableCell align="right">Expected Annual Revenue</TableCell>
                   <TableCell align="right">Projected Annual Revenue</TableCell>
                   <TableCell align="right">Revenue Variance</TableCell>
+                  <TableCell align="right">Variance Breakdown</TableCell>
                   <TableCell align="right">Adoption Rate</TableCell>
                   <TableCell align="right">Volume Performance</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
+                {/* Total Row */}
+                {data && data.length > 0 && (
+                  <TableRow sx={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">
+                        TOTAL ({data.length} merchants)
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary">
+                        Aggregated Performance
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Typography variant="body2" fontWeight="medium">
+                        All Active
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight="medium">
+                        {formatCurrency(summaryStats.totalExpected)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight="medium">
+                        {formatCurrency(summaryStats.totalActual)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        fontWeight="bold"
+                        color={summaryStats.totalVariance >= 0 ? 'success.main' : 'error.main'}
+                      >
+                        {summaryStats.totalVariance >= 0 ? formatCurrency(summaryStats.totalVariance) : `(${formatCurrency(Math.abs(summaryStats.totalVariance))})`}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Box>
+                        <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 'medium' }}>
+                          <span style={{ color: summaryStats.totalVolumeContribution >= 0 ? '#2e7d32' : '#d32f2f' }}>
+                            Vol: {formatCurrency(summaryStats.totalVolumeContribution)}
+                          </span>
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 'medium' }}>
+                          <span style={{ color: summaryStats.totalAdoptionContribution >= 0 ? '#2e7d32' : '#d32f2f' }}>
+                            Adopt: {formatCurrency(summaryStats.totalAdoptionContribution)}
+                          </span>
+                        </Typography>
+                        {Math.abs(summaryStats.totalInteractionContribution) > 1000 && (
+                          <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', fontWeight: 'medium' }}>
+                            Mix: {formatCurrency(summaryStats.totalInteractionContribution)}
+                          </Typography>
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight="medium">
+                        {summaryStats.avgAdoptionActual.toFixed(1)}% (vs {summaryStats.avgAdoptionExpected.toFixed(1)}%)
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight="medium">
+                        {formatVolume(summaryStats.totalVolumeActual)} (vs {formatVolume(summaryStats.totalVolumeExpected)})
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
                 {Array.isArray(data) ? data
                   .sort((a, b) => Math.abs((b.revenueVariance || 0)) - Math.abs((a.revenueVariance || 0)))
                   .map((row) => (
@@ -292,7 +396,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                       </TableCell>
                       <TableCell align="center">
                         <Chip
-                          label={`${row.daysLive || 0} days`}
+                          label={`${Math.round(row.daysLive || 0)} days`}
                           size="small"
                           variant="outlined"
                           color={(row.daysLive || 0) >= 90 ? 'success' : (row.daysLive || 0) >= 30 ? 'warning' : 'error'}
@@ -323,6 +427,25 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                           >
                             {formatPercentage(row.revenueVariancePercent || 0)}
                           </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Box>
+                          <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                            <span style={{ color: (row.volumeContribution || 0) >= 0 ? '#2e7d32' : '#d32f2f' }}>
+                              Vol: {formatCurrency(row.volumeContribution || 0)}
+                            </span>
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                            <span style={{ color: (row.adoptionContribution || 0) >= 0 ? '#2e7d32' : '#d32f2f' }}>
+                              Adopt: {formatCurrency(row.adoptionContribution || 0)}
+                            </span>
+                          </Typography>
+                          {Math.abs(row.interactionContribution || 0) > 100 && (
+                            <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary' }}>
+                              Mix: {formatCurrency(row.interactionContribution || 0)}
+                            </Typography>
+                          )}
                         </Box>
                       </TableCell>
                       <TableCell align="right">

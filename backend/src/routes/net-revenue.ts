@@ -20,6 +20,9 @@ interface NetRevenueData {
   volumeExpected: number;
   volumeActual: number;
   volumeVariance: number;
+  volumeContribution: number;
+  adoptionContribution: number;
+  interactionContribution: number;
   implementationStatus: string;
   daysLive: number;
 }
@@ -114,7 +117,7 @@ router.get('/net-revenue', async (req, res) => {
     const daysLiveFilter = req.query.daysLive as string || 'all';
 
     // Get opportunities with their expected revenue
-    const opportunitiesQuery = `
+    let opportunitiesQuery = `
       SELECT
         o.account_casesafe_id as accountId,
         o.account_name as accountName,
@@ -128,11 +131,20 @@ router.get('/net-revenue', async (req, res) => {
         o.loop_share_percent,
         o.blended_avg_cost_per_return,
         o.labels_paid_by,
-        o.implementation_status as implementationStatus
+        o.implementation_status as implementationStatus,
+        (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) as daysLive
       FROM opportunities o
       WHERE o.checkout_enabled = 'Yes'
         AND o.annual_order_volume > 0
+        AND o.pricing_model != 'Flat'
+        AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
     `;
+
+    // Apply days live filter at SQL level for consistency with other tabs
+    if (daysLiveFilter !== 'all') {
+      const threshold = parseInt(daysLiveFilter);
+      opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+    }
 
     const opportunities = await new Promise<any[]>((resolve, reject) => {
       db.all(opportunitiesQuery, (err, rows: any[]) => {
@@ -148,21 +160,34 @@ router.get('/net-revenue', async (req, res) => {
     const netRevenueData: NetRevenueData[] = [];
 
     for (const opportunity of opportunities) {
-      // Get trailing 4-week performance
+      // Get trailing 4-week performance, fallback to all-time if no recent data
       const performanceQuery = `
         SELECT
-          AVG(p.ecomm_orders) as avg_weekly_orders,
-          AVG(CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END) as avg_adoption_rate,
-          MAX(p.days_live) as days_live
-        FROM performance_actuals p
-        WHERE p.salesforce_account_id = ?
-          AND p.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
-          AND p.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
-          AND p.ecomm_orders > 0
+          COALESCE(recent.avg_weekly_orders, historical.avg_weekly_orders, 0) as avg_weekly_orders,
+          COALESCE(recent.avg_adoption_rate, historical.avg_adoption_rate, 0) as avg_adoption_rate
+        FROM (SELECT 1) dummy
+        LEFT JOIN (
+          SELECT
+            AVG(p.ecomm_orders) as avg_weekly_orders,
+            AVG(CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END) as avg_adoption_rate
+          FROM performance_actuals p
+          WHERE p.salesforce_account_id = ?
+            AND p.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+            AND p.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
+            AND p.ecomm_orders > 0
+        ) recent ON 1=1
+        LEFT JOIN (
+          SELECT
+            AVG(p.ecomm_orders) as avg_weekly_orders,
+            AVG(CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END) as avg_adoption_rate
+          FROM performance_actuals p
+          WHERE p.salesforce_account_id = ?
+            AND p.ecomm_orders > 0
+        ) historical ON 1=1
       `;
 
       const performance = await new Promise<any>((resolve, reject) => {
-        db.get(performanceQuery, [opportunity.accountId], (err, row: any) => {
+        db.get(performanceQuery, [opportunity.accountId, opportunity.accountId], (err, row: any) => {
           if (err) {
             reject(err);
             return;
@@ -171,14 +196,15 @@ router.get('/net-revenue', async (req, res) => {
         });
       });
 
-      // Skip if no performance data or doesn't meet days live filter
-      const daysLive = performance.days_live || 0;
-      if (daysLiveFilter !== 'all') {
-        const threshold = parseInt(daysLiveFilter);
-        if (daysLive < threshold) continue;
-      }
+      // Get days live from opportunity query (already filtered at SQL level)
+      const daysLive = opportunity.daysLive || 0;
 
-      if (!performance.avg_weekly_orders || performance.avg_weekly_orders <= 0) continue;
+      // Skip only if no performance data exists at all
+      if (!performance.avg_weekly_orders || performance.avg_weekly_orders <= 0) {
+        // Still include merchant with zero performance for analysis
+        performance.avg_weekly_orders = 0;
+        performance.avg_adoption_rate = 0;
+      }
 
       // Calculate projected annual volume based on trailing performance
       const projectedAnnualVolume = performance.avg_weekly_orders * 52;
@@ -197,6 +223,26 @@ router.get('/net-revenue', async (req, res) => {
       const adoptionVariance = actualAdoptionRate - (opportunity.adoption_rate || 50);
       const volumeVariance = ((projectedAnnualVolume - opportunity.annual_order_volume) / opportunity.annual_order_volume) * 100;
 
+      // Calculate variance contributions
+      // Revenue with expected adoption but actual volume
+      const revenueWithExpectedAdoption = calculateActualRevenue(opportunity, {
+        projected_annual_volume: projectedAnnualVolume,
+        actual_adoption_rate: opportunity.adoption_rate || 50
+      });
+
+      // Revenue with expected volume but actual adoption
+      const revenueWithExpectedVolume = calculateActualRevenue(opportunity, {
+        projected_annual_volume: opportunity.annual_order_volume,
+        actual_adoption_rate: actualAdoptionRate
+      });
+
+      // Isolate variance contributions
+      const volumeContribution = revenueWithExpectedAdoption - expectedRevenue;
+      const adoptionContribution = revenueWithExpectedVolume - expectedRevenue;
+
+      // Remaining variance (interaction effect)
+      const interactionContribution = actualRevenue - revenueWithExpectedAdoption - revenueWithExpectedVolume + expectedRevenue;
+
       netRevenueData.push({
         accountId: opportunity.accountId,
         accountName: opportunity.accountName,
@@ -212,6 +258,9 @@ router.get('/net-revenue', async (req, res) => {
         volumeExpected: opportunity.annual_order_volume,
         volumeActual: Math.round(projectedAnnualVolume),
         volumeVariance: Math.round(volumeVariance * 10) / 10,
+        volumeContribution: Math.round(volumeContribution),
+        adoptionContribution: Math.round(adoptionContribution),
+        interactionContribution: Math.round(interactionContribution),
         implementationStatus: opportunity.implementationStatus,
         daysLive: daysLive
       });
