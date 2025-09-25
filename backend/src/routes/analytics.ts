@@ -69,7 +69,19 @@ router.get('/overview', async (req, res) => {
           p.iso_week,
           p.ecomm_orders,
           p.accepted_offers,
-          p.offer_shown
+          p.offer_shown,
+          (
+            SELECT
+              CASE
+                WHEN COUNT(DISTINCT p2.iso_week) >= 4 AND SUM(p2.ecomm_orders) > 0 THEN
+                  (((CAST(SUM(p2.accepted_offers) AS REAL) / SUM(p2.ecomm_orders)) * 100) - o.adoption_rate) * 100
+                ELSE NULL
+              END
+            FROM performance_actuals p2
+            WHERE p2.salesforce_account_id = p.salesforce_account_id
+              AND p2.iso_week <= p.iso_week
+              AND p2.iso_week > (p.iso_week - 4)
+          ) as trailing_4week_variance_bps
         FROM performance_actuals p
         JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
         WHERE p.iso_week = (SELECT MAX(iso_week) FROM performance_actuals)
@@ -88,7 +100,7 @@ router.get('/overview', async (req, res) => {
 
         const merchants = rows.map(row => ({
           ...row,
-          performance_tier: calculatePerformanceTier(row.adoption_variance_bps)
+          performance_tier: calculatePerformanceTier(row.trailing_4week_variance_bps !== null ? row.trailing_4week_variance_bps : row.adoption_variance_bps)
         }));
 
         resolve(merchants);
@@ -287,7 +299,7 @@ router.get('/merchants', async (req, res) => {
 
         const merchants = rows.map(row => ({
           ...row,
-          performance_tier: calculatePerformanceTier(row.adoption_variance_bps)
+          performance_tier: calculatePerformanceTier(row.trailing_4week_variance_bps !== null ? row.trailing_4week_variance_bps : row.adoption_variance_bps)
         }));
 
         resolve(merchants);
