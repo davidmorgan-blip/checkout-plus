@@ -170,10 +170,8 @@ export default function VolumeAnalysis() {
     const recentWeeks = getRecentWeeks();
     const merchantMap = new Map();
 
+    // First pass: Create merchant entries for ALL merchants
     volumeData.weeklyTrends.forEach(trend => {
-      // Only include data from recent 6 weeks
-      if (!recentWeeks.includes(trend.iso_week)) return;
-
       if (!merchantMap.has(trend.salesforce_account_id)) {
         merchantMap.set(trend.salesforce_account_id, {
           salesforce_account_id: trend.salesforce_account_id,
@@ -186,6 +184,11 @@ export default function VolumeAnalysis() {
           trailing6WeekTotal: 0
         });
       }
+    });
+
+    // Second pass: Add weekly data for recent 6 weeks only
+    volumeData.weeklyTrends.forEach(trend => {
+      if (!recentWeeks.includes(trend.iso_week)) return;
 
       const merchant = merchantMap.get(trend.salesforce_account_id);
       merchant.weeks.set(trend.iso_week, {
@@ -278,7 +281,7 @@ export default function VolumeAnalysis() {
                   Expected: {volumeData.summary.expectedWeekOrders.toLocaleString()}
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.25 }}>
-                  Merchant Count: {getMerchantWeeklyData().length}
+                  Merchant Count: {volumeData.summary.merchantCount}
                 </Typography>
               </Box>
               <BusinessIcon color="primary" sx={{ fontSize: 40 }} />
@@ -300,7 +303,7 @@ export default function VolumeAnalysis() {
                   Expected: {volumeData.summary.avgExpectedTrailing4WeekOrders.toLocaleString()}
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.25 }}>
-                  Merchant Count: {getMerchantWeeklyData().length}
+                  Merchant Count: {volumeData.summary.merchantCount}
                 </Typography>
               </Box>
               <AssessmentIcon color="secondary" sx={{ fontSize: 40 }} />
@@ -322,15 +325,7 @@ export default function VolumeAnalysis() {
                   Expected: {volumeData.summary.totalOpportunityAnnualVolume.toLocaleString()}
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.25 }}>
-                  Merchant Count: {(() => {
-                    const merchantData = getMerchantWeeklyData();
-                    const merchantsInWeeklyData = new Set(merchantData.map(m => m.merchant_name));
-                    const filteredForecasts = volumeData.forecasts.filter(forecast =>
-                      forecast.forecast_12month_orders !== null &&
-                      merchantsInWeeklyData.has(forecast.merchant_name)
-                    );
-                    return filteredForecasts.length;
-                  })()}
+                  Forecasts: {volumeData.forecasts.length} of {volumeData.summary.merchantCount}
                 </Typography>
               </Box>
               <TimelineIcon color="info" sx={{ fontSize: 40 }} />
@@ -348,7 +343,7 @@ export default function VolumeAnalysis() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Merchant ({merchantData.length})</TableCell>
+                <TableCell>Merchant</TableCell>
                 <TableCell align="right">Days Live</TableCell>
                 {recentWeeks.map(week => (
                   <TableCell key={week} align="center">
@@ -367,7 +362,7 @@ export default function VolumeAnalysis() {
               <TableRow sx={{ backgroundColor: 'grey.100', '& .MuiTableCell-root': { fontWeight: 'bold' } }}>
                 <TableCell component="th" scope="row">
                   <Typography variant="body2" fontWeight="bold" color="text.primary">
-                    TOTAL ({merchantData.length} merchants)
+                    TOTAL ({volumeData.summary.merchantCount} merchants)
                   </Typography>
                 </TableCell>
                 <TableCell align="right">

@@ -21,6 +21,8 @@ interface NetRevenueData {
   volumeActual: number;
   volumeVariance: number;
   volumeContribution: number;
+  adjustmentNeeded: boolean;
+  adjustmentStatus: string;
   adoptionContribution: number;
   interactionContribution: number;
   implementationStatus: string;
@@ -301,6 +303,27 @@ router.get('/net-revenue', async (req, res) => {
       // Remaining variance (interaction effect)
       const interactionContribution = actualRevenue - revenueWithExpectedAdoption - revenueWithExpectedVolume + expectedRevenue;
 
+      // Calculate Adjustment Needed logic
+      // Volume: >20% worse than initial 12 month volume (volumeVariance < -20)
+      // Adoption Rate: >1000bps (10%) worse than initial adoption rate (adoptionVariance < -10)
+      const volumeNeedsAdjustment = volumeVariance < -20;
+      const adoptionNeedsAdjustment = adoptionVariance < -10;
+      const adjustmentNeeded = volumeNeedsAdjustment || adoptionNeedsAdjustment;
+
+      // Calculate Adjustment Status with 60-day rule and data availability
+      let adjustmentStatus: string;
+      const hasRecentPerformanceData = weeklyPerformance.length > 0;
+
+      if (daysLive < 60) {
+        adjustmentStatus = 'Pending (<60 days live)';
+      } else if (!hasRecentPerformanceData) {
+        adjustmentStatus = 'Pending (insufficient data)';
+      } else if (adjustmentNeeded) {
+        adjustmentStatus = 'Adjusted';
+      } else {
+        adjustmentStatus = 'Not Adjusted';
+      }
+
       netRevenueData.push({
         accountId: opportunity.accountId,
         accountName: opportunity.accountName,
@@ -317,6 +340,8 @@ router.get('/net-revenue', async (req, res) => {
         volumeActual: Math.round(projectedAnnualVolume),
         volumeVariance: Math.round(volumeVariance * 10) / 10,
         volumeContribution: Math.round(volumeContribution),
+        adjustmentNeeded: adjustmentNeeded,
+        adjustmentStatus: adjustmentStatus,
         adoptionContribution: Math.round(adoptionContribution),
         interactionContribution: Math.round(interactionContribution),
         implementationStatus: opportunity.implementationStatus,
@@ -530,16 +555,6 @@ router.get('/net-revenue/export', async (req, res) => {
       const hasVolumeIssue = volumeVariancePercent <= -20; // -20% or worse volume variance
       const hasAdoptionIssue = adoptionVarianceBps <= -1000; // -1000bps or worse adoption variance
 
-      // If necessaryChangesOnly filter is enabled, exclude merchants with 0% adoption rate first
-      // then only include merchants with other issues
-      if (necessaryChangesOnly) {
-        if (actualAdoptionRate < 1) {
-          continue; // Skip merchants with <1% adoption rate - may indicate systemic issues
-        }
-        if (!hasVolumeIssue && !hasAdoptionIssue) {
-          continue; // Skip merchants with no issues
-        }
-      }
 
       const merchantData: any = {
         'SFDC Account ID': opportunity.accountId,
@@ -549,19 +564,39 @@ router.get('/net-revenue/export', async (req, res) => {
         'Original Adoption Rate': ((opportunity.adoption_rate || 50) / 100).toFixed(2)
       };
 
-      // Only include problematic columns when necessaryChangesOnly is enabled
+      // Calculate Adjustment Status first to determine column filling logic
+      let adjustmentStatus: string;
+      const hasRecentPerformanceData = weeklyPerformance.length > 0;
+
+      if (daysLive < 60) {
+        adjustmentStatus = 'Pending';
+      } else if (!hasRecentPerformanceData) {
+        adjustmentStatus = 'Pending';
+      } else if (hasVolumeIssue || hasAdoptionIssue) {
+        adjustmentStatus = 'Adjusted';
+      } else {
+        adjustmentStatus = 'Not Adjusted';
+      }
+
+      // Only include problematic columns when necessaryChangesOnly is enabled and merchant has "Adjusted" status
       if (necessaryChangesOnly) {
-        if (hasVolumeIssue) {
-          merchantData['Forecasted 12 Month Order Volume'] = Math.round(projectedAnnualVolume);
+        // Only fill in data for merchants with "Adjusted" status
+        if (adjustmentStatus === 'Adjusted') {
+          if (hasVolumeIssue) {
+            merchantData['Forecasted 12 Month Order Volume'] = Math.round(projectedAnnualVolume);
+          }
+          if (hasAdoptionIssue) {
+            merchantData['Trailing 4 Week Adoption Rate'] = (actualAdoptionRate / 100).toFixed(2);
+          }
         }
-        if (hasAdoptionIssue) {
-          merchantData['Trailing 4 Week Adoption Rate'] = (actualAdoptionRate / 100).toFixed(2);
-        }
+        // For all other statuses (Pending, Not Adjusted), leave these columns empty (will be handled in CSV generation)
       } else {
         // Include all columns for normal export
         merchantData['Forecasted 12 Month Order Volume'] = Math.round(projectedAnnualVolume);
         merchantData['Trailing 4 Week Adoption Rate'] = (actualAdoptionRate / 100).toFixed(2);
       }
+
+      merchantData['Adjustment Status'] = adjustmentStatus;
 
       // Always include revenue columns at the end
       merchantData['Expected Annual Revenue'] = Math.round(expectedRevenue);
@@ -592,6 +627,7 @@ router.get('/net-revenue/export', async (req, res) => {
         'Original Adoption Rate',
         'Forecasted 12 Month Order Volume',
         'Trailing 4 Week Adoption Rate',
+        'Adjustment Status',
         'Expected Annual Revenue',
         'Projected Annual Revenue',
         'Revenue Variance'

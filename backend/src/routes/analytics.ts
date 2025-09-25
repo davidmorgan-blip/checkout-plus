@@ -49,27 +49,27 @@ router.get('/overview', async (req, res) => {
   try {
     const daysLiveFilter = req.query.daysLive as string || 'all';
 
-    // Get merchant performance with variance calculations
+    // Get merchant performance with variance calculations using consistent filtering
     const merchantData = await new Promise<any[]>((resolve, reject) => {
       let query = `
         SELECT
-          p.salesforce_account_id,
-          p.merchant_name,
-          JULIANDAY('now') - JULIANDAY(p.first_offer_date) as days_live,
-          CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END as current_adoption_rate,
+          o.account_casesafe_id as salesforce_account_id,
+          o.account_name as merchant_name,
+          (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live,
+          CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN CAST(COALESCE(p.accepted_offers, 0) AS REAL) / p.ecomm_orders ELSE 0 END as current_adoption_rate,
           o.adoption_rate as expected_adoption_rate,
-          CASE WHEN p.ecomm_orders > 0 THEN
-            (((CAST(p.accepted_offers AS REAL) / p.ecomm_orders) * 100) - o.adoption_rate) * 100
+          CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN
+            (((CAST(COALESCE(p.accepted_offers, 0) AS REAL) / p.ecomm_orders) * 100) - o.adoption_rate) * 100
           ELSE 0 END as adoption_variance_bps,
-          CASE WHEN p.ecomm_orders > 0 THEN
-            ((((CAST(p.accepted_offers AS REAL) / p.ecomm_orders) * 100) - o.adoption_rate) / o.adoption_rate * 100)
+          CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN
+            ((((CAST(COALESCE(p.accepted_offers, 0) AS REAL) / p.ecomm_orders) * 100) - o.adoption_rate) / o.adoption_rate * 100)
           ELSE 0 END as adoption_variance_pct,
-          CASE WHEN p.ecomm_orders > 0 THEN CAST(p.offer_shown AS REAL) / p.ecomm_orders ELSE 0 END as current_eligibility_rate,
-          p.attach_rate_avg as attach_rate,
-          p.iso_week,
-          p.ecomm_orders,
-          p.accepted_offers,
-          p.offer_shown,
+          CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN CAST(COALESCE(p.offer_shown, 0) AS REAL) / p.ecomm_orders ELSE 0 END as current_eligibility_rate,
+          COALESCE(p.attach_rate_avg, 0) as attach_rate,
+          COALESCE(p.iso_week, (SELECT MAX(iso_week) FROM performance_actuals)) as iso_week,
+          COALESCE(p.ecomm_orders, 0) as ecomm_orders,
+          COALESCE(p.accepted_offers, 0) as accepted_offers,
+          COALESCE(p.offer_shown, 0) as offer_shown,
           (
             SELECT
               CASE
@@ -78,18 +78,22 @@ router.get('/overview', async (req, res) => {
                 ELSE NULL
               END
             FROM performance_actuals p2
-            WHERE p2.salesforce_account_id = p.salesforce_account_id
-              AND p2.iso_week <= p.iso_week
-              AND p2.iso_week > (p.iso_week - 4)
+            WHERE p2.salesforce_account_id = o.account_casesafe_id
+              AND p2.iso_week <= (SELECT MAX(p3.iso_week) FROM performance_actuals p3 WHERE p3.salesforce_account_id = o.account_casesafe_id)
+              AND p2.iso_week > (SELECT MAX(p3.iso_week) FROM performance_actuals p3 WHERE p3.salesforce_account_id = o.account_casesafe_id) - 4
           ) as trailing_4week_variance_bps
-        FROM performance_actuals p
-        JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
-        WHERE p.iso_week = (SELECT MAX(iso_week) FROM performance_actuals)
+        FROM opportunities o
+        LEFT JOIN performance_actuals p ON o.account_casesafe_id = p.salesforce_account_id
+          AND p.iso_week = (SELECT MAX(p2.iso_week) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id)
+        WHERE o.checkout_enabled = 'Yes'
+          AND o.annual_order_volume > 0
+          AND o.pricing_model != 'Flat'
+          AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
       `;
 
       if (daysLiveFilter !== 'all') {
         const threshold = parseInt(daysLiveFilter);
-        query += ` AND (JULIANDAY('now') - JULIANDAY(p.first_offer_date)) >= ${threshold}`;
+        query += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
       }
 
       db.all(query, (err, rows: any[]) => {
@@ -193,10 +197,10 @@ router.get('/merchants', async (req, res) => {
     // First, get all merchant data with calculated performance tiers
     let baseQuery = `
       SELECT
-        p.salesforce_account_id,
+        o.account_casesafe_id as salesforce_account_id,
         o.opportunity_id,
-        p.merchant_name,
-        JULIANDAY('now') - JULIANDAY(p.first_offer_date) as days_live,
+        o.account_name as merchant_name,
+        (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live,
         CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END as current_adoption_rate,
         o.adoption_rate as expected_adoption_rate,
         CASE WHEN p.ecomm_orders > 0 THEN
@@ -205,14 +209,14 @@ router.get('/merchants', async (req, res) => {
         CASE WHEN p.ecomm_orders > 0 THEN
           ((((CAST(p.accepted_offers AS REAL) / p.ecomm_orders) * 100) - o.adoption_rate) / o.adoption_rate * 100)
         ELSE 0 END as adoption_variance_pct,
-        CASE WHEN p.ecomm_orders > 0 THEN CAST(p.offer_shown AS REAL) / p.ecomm_orders ELSE 0 END as current_eligibility_rate,
+        CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN CAST(COALESCE(p.offer_shown, 0) AS REAL) / p.ecomm_orders ELSE 0 END as current_eligibility_rate,
         0.707 as expected_eligibility_rate,
-        CASE WHEN p.ecomm_orders > 0 THEN
-          (((CAST(p.offer_shown AS REAL) / p.ecomm_orders) * 100) - 70.7) * 100
+        CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN
+          (((CAST(COALESCE(p.offer_shown, 0) AS REAL) / p.ecomm_orders) * 100) - 70.7) * 100
         ELSE 0 END as eligibility_variance_bps,
-        p.attach_rate_avg as attach_rate,
-        p.ecomm_orders as current_ecom_orders,
-        p.iso_week as current_week,
+        COALESCE(p.attach_rate_avg, 0) as attach_rate,
+        COALESCE(p.ecomm_orders, 0) as current_ecom_orders,
+        COALESCE(p.iso_week, (SELECT MAX(iso_week) FROM performance_actuals)) as current_week,
         o.benchmark_vertical,
         o.pricing_model,
         o.labels_paid_by,
@@ -224,9 +228,9 @@ router.get('/merchants', async (req, res) => {
               ELSE NULL
             END
           FROM performance_actuals p2
-          WHERE p2.salesforce_account_id = p.salesforce_account_id
-            AND p2.iso_week <= p.iso_week
-            AND p2.iso_week > (p.iso_week - 4)
+          WHERE p2.salesforce_account_id = o.account_casesafe_id
+            AND p2.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+            AND p2.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
         ) as trailing_4week_adoption_rate,
         (
           SELECT
@@ -236,9 +240,9 @@ router.get('/merchants', async (req, res) => {
               ELSE NULL
             END
           FROM performance_actuals p2
-          WHERE p2.salesforce_account_id = p.salesforce_account_id
-            AND p2.iso_week <= p.iso_week
-            AND p2.iso_week > (p.iso_week - 4)
+          WHERE p2.salesforce_account_id = o.account_casesafe_id
+            AND p2.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+            AND p2.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
         ) as trailing_4week_variance_bps,
         (
           SELECT
@@ -248,9 +252,9 @@ router.get('/merchants', async (req, res) => {
               ELSE NULL
             END
           FROM performance_actuals p2
-          WHERE p2.salesforce_account_id = p.salesforce_account_id
-            AND p2.iso_week <= p.iso_week
-            AND p2.iso_week > (p.iso_week - 4)
+          WHERE p2.salesforce_account_id = o.account_casesafe_id
+            AND p2.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+            AND p2.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
         ) as trailing_4week_eligibility_rate,
         (
           SELECT
@@ -260,9 +264,9 @@ router.get('/merchants', async (req, res) => {
               ELSE NULL
             END
           FROM performance_actuals p2
-          WHERE p2.salesforce_account_id = p.salesforce_account_id
-            AND p2.iso_week <= p.iso_week
-            AND p2.iso_week > (p.iso_week - 4)
+          WHERE p2.salesforce_account_id = o.account_casesafe_id
+            AND p2.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+            AND p2.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
         ) as trailing_4week_eligibility_variance_bps,
         (
           SELECT
@@ -271,20 +275,24 @@ router.get('/merchants', async (req, res) => {
               ELSE NULL
             END
           FROM performance_actuals p2
-          WHERE p2.salesforce_account_id = p.salesforce_account_id
-            AND p2.iso_week <= p.iso_week
-            AND p2.iso_week > (p.iso_week - 4)
+          WHERE p2.salesforce_account_id = o.account_casesafe_id
+            AND p2.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+            AND p2.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
         ) as trailing_4week_ecom_orders
-      FROM performance_actuals p
-      JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
-      WHERE p.iso_week = (SELECT MAX(iso_week) FROM performance_actuals)
+      FROM opportunities o
+      LEFT JOIN performance_actuals p ON o.account_casesafe_id = p.salesforce_account_id
+        AND p.iso_week = (SELECT MAX(p2.iso_week) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id)
+      WHERE o.checkout_enabled = 'Yes'
+        AND o.annual_order_volume > 0
+        AND o.pricing_model != 'Flat'
+        AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
     `;
 
     const params: any[] = [];
 
     if (daysLiveFilter !== 'all') {
       const threshold = parseInt(daysLiveFilter);
-      baseQuery += ` AND (JULIANDAY('now') - JULIANDAY(p.first_offer_date)) >= ?`;
+      baseQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
       params.push(threshold);
     }
 
@@ -423,31 +431,34 @@ router.get('/volume', async (req, res) => {
     // Get weekly trends with expected orders calculated from annual volume + seasonality
     let weeklyTrendsQuery = `
       SELECT
-        p.salesforce_account_id,
+        o.account_casesafe_id as salesforce_account_id,
         o.opportunity_id,
-        p.merchant_name,
+        o.account_name as merchant_name,
         p.iso_week,
-        p.ecomm_orders as actual_weekly_orders,
-        p.accepted_offers,
+        COALESCE(p.ecomm_orders, 0) as actual_weekly_orders,
+        COALESCE(p.accepted_offers, 0) as accepted_offers,
         o.benchmark_vertical,
         o.annual_order_volume,
         o.labels_paid_by,
         o.adoption_rate as expected_adoption_rate,
-        CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END as actual_adoption_rate,
-        JULIANDAY('now') - JULIANDAY(p.first_offer_date) as days_live
-      FROM performance_actuals p
-      JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
-      WHERE o.pricing_model != 'Flat'
+        CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN CAST(COALESCE(p.accepted_offers, 0) AS REAL) / p.ecomm_orders ELSE 0 END as actual_adoption_rate,
+        (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live
+      FROM opportunities o
+      LEFT JOIN performance_actuals p ON o.account_casesafe_id = p.salesforce_account_id
+      WHERE o.checkout_enabled = 'Yes'
+        AND o.annual_order_volume > 0
+        AND o.pricing_model != 'Flat'
+        AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
     `;
 
     const params: any[] = [];
     if (daysLiveFilter !== 'all') {
       const threshold = parseInt(daysLiveFilter);
-      weeklyTrendsQuery += ` AND (JULIANDAY('now') - JULIANDAY(p.first_offer_date)) >= ?`;
+      weeklyTrendsQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
       params.push(threshold);
     }
 
-    weeklyTrendsQuery += ` ORDER BY p.merchant_name, p.iso_week`;
+    weeklyTrendsQuery += ` ORDER BY merchant_name, p.iso_week`;
 
     const weeklyTrends = await new Promise<any[]>((resolve, reject) => {
       db.all(weeklyTrendsQuery, params, (err, rows: any[]) => {
@@ -549,7 +560,9 @@ router.get('/volume', async (req, res) => {
           trailing4WeekVariancePercentage: avgExpectedTrailing4WeekOrders > 0 ?
             Math.round(((avgTrailing4WeekOrders - avgExpectedTrailing4WeekOrders) / avgExpectedTrailing4WeekOrders * 100) * 10) / 10 : 0,
           currentWeek,
-          merchantCount: currentWeekData.length,
+          merchantCount: uniqueMerchants.size,
+          forecastMerchantCount: forecasts.length,
+          merchantsExcludedFromForecast: uniqueMerchants.size - forecasts.length,
           totalForecast12MonthOrders: totalForecast12MonthOrders,
           totalOpportunityAnnualVolume: totalOpportunityAnnualVolume,
           forecast12MonthVarianceOrders: Math.round(forecast12MonthVarianceOrders),

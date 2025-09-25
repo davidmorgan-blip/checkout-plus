@@ -47,6 +47,8 @@ interface NetRevenueData {
   volumeActual: number;
   volumeVariance: number;
   volumeContribution: number;
+  adjustmentNeeded: boolean;
+  adjustmentStatus: string;
   adoptionContribution: number;
   interactionContribution: number;
   implementationStatus: string;
@@ -61,7 +63,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const [error, setError] = useState<string | null>(null);
   const [daysLiveFilter, setDaysLiveFilter] = useState('all');
   const [exporting, setExporting] = useState(false);
-  const [necessaryChangesOnly, setNecessaryChangesOnly] = useState(false);
+  const [necessaryChangesOnly, setNecessaryChangesOnly] = useState(true);
 
   const fetchNetRevenueData = async () => {
     try {
@@ -283,7 +285,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
               label={
                 <Tooltip title="Export only merchants with -20% or worse volume forecast OR -1000bps or worse adoption rate variance">
                   <Typography variant="caption" sx={{ cursor: 'help' }}>
-                    Export necessary changes only
+                    Export adjustments only
                   </Typography>
                 </Tooltip>
               }
@@ -386,6 +388,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                   <TableCell align="right">Variance Breakdown</TableCell>
                   <TableCell align="right">Adoption Rate</TableCell>
                   <TableCell align="right">Volume Performance</TableCell>
+                  <TableCell align="center">Adjustment Needed</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -451,6 +454,11 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight="medium">
                         {formatVolume(summaryStats.totalVolumeActual)} (vs {formatVolume(summaryStats.totalVolumeExpected)})
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Typography variant="body2" fontWeight="medium">
+                        {data.filter(d => d.adjustmentStatus === 'Adjusted').length} Adjusted, {data.filter(d => d.adjustmentStatus.startsWith('Pending')).length} Pending, {data.filter(d => d.adjustmentStatus === 'Not Adjusted').length} Not Adjusted
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -554,6 +562,26 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                           >
                             {formatPercentage(row.volumeVariance || 0)}
                           </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Box display="flex" flexDirection="column" alignItems="center">
+                          <Chip
+                            label={
+                              row.adjustmentStatus.startsWith('Pending') ? "Pending" : row.adjustmentStatus
+                            }
+                            size="small"
+                            color={
+                              row.adjustmentStatus === 'Adjusted' ? "error" :
+                              row.adjustmentStatus.startsWith('Pending') ? "warning" : "success"
+                            }
+                            variant={row.adjustmentStatus === 'Not Adjusted' ? "outlined" : "filled"}
+                          />
+                          {row.adjustmentStatus.startsWith('Pending') && (
+                            <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, fontSize: '0.7rem' }}>
+                              {row.adjustmentStatus.replace('Pending ', '').replace('(', '').replace(')', '')}
+                            </Typography>
+                          )}
                         </Box>
                       </TableCell>
                     </TableRow>
