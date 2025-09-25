@@ -15,6 +15,7 @@ import {
   LinearProgress,
   Chip,
   CircularProgress,
+  Link,
 } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -77,7 +78,7 @@ interface FileUploadState {
 }
 
 export default function SimpleDashboard() {
-  const [tabValue, setTabValue] = useState(3); // Start with Data Upload tab
+  const [tabValue, setTabValue] = useState(0); // Start with Net Revenue tab (will fallback to Data Upload if disabled)
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
     opportunities: 0,
     performanceRecords: 0,
@@ -155,10 +156,12 @@ export default function SimpleDashboard() {
 
   // Set default tab based on data loaded status
   useEffect(() => {
-    if (dataLoaded && tabValue === 3) {
-      // If data becomes available and we're still on Data Upload tab, switch to Net Revenue
-      setTabValue(0);
+    if (!dataLoaded && tabValue !== 3) {
+      // If no data and we're not on Data Upload tab, switch to Data Upload
+      setTabValue(3);
     }
+    // When data becomes available, if we're on Data Upload tab, switch to Net Revenue
+    // If we start with Net Revenue (index 0) and data loads, we stay there automatically
   }, [dataLoaded, tabValue]);
 
   // Fetch opportunities breakdown when data is loaded
@@ -253,7 +256,7 @@ export default function SimpleDashboard() {
     recordCount
   }: {
     title: string;
-    description: string;
+    description: React.ReactNode;
     uploadState: FileUploadState;
     onDrop: (e: React.DragEvent) => void;
     recordCount: number;
@@ -531,7 +534,19 @@ export default function SimpleDashboard() {
               <Box sx={{ flex: 1 }}>
                 <DropZone
                   title="Salesforce Opportunities"
-                  description="Upload opportunities CSV with merchant deal projections and contract details"
+                  description={
+                    <>
+                      Upload opportunities CSV with merchant deal projections and contract details. {' '}
+                      <Link
+                        href="https://loopreturn.lightning.force.com/lightning/r/Report/00OV5000002d6KXMAY/view?queryScope=userFolders"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        color="primary"
+                      >
+                        View source report
+                      </Link>
+                    </>
+                  }
                   uploadState={opportunitiesUpload}
                   onDrop={(e: React.DragEvent) => {
                     e.preventDefault();
@@ -545,7 +560,19 @@ export default function SimpleDashboard() {
               <Box sx={{ flex: 1 }}>
                 <DropZone
                   title="Performance Actuals"
-                  description="Upload weekly performance data with actual adoption rates and order volumes"
+                  description={
+                    <>
+                      Upload weekly performance data with actual adoption rates and order volumes. {' '}
+                      <Link
+                        href="https://app.hex.tech/loopreturns/hex/CO-Dashboard-Performance-Actuals-0319Ae9zBCUBtH9lrqFN5L/draft/logic"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        color="primary"
+                      >
+                        View source dashboard
+                      </Link>
+                    </>
+                  }
                   uploadState={performanceUpload}
                   onDrop={(e: React.DragEvent) => {
                     e.preventDefault();
@@ -559,7 +586,19 @@ export default function SimpleDashboard() {
               <Box sx={{ flex: 1 }}>
                 <DropZone
                   title="Order Seasonality"
-                  description="Upload seasonality curves showing expected order distribution by week and vertical"
+                  description={
+                    <>
+                      Upload seasonality curves showing expected order distribution by week and vertical. {' '}
+                      <Link
+                        href="https://docs.google.com/spreadsheets/d/1nc9vrCpDVG2_oIhQ6qpw2ofnMIFnwtPcCvmSMlNhXfI/edit?gid=0#gid=0"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        color="primary"
+                      >
+                        View source spreadsheet
+                      </Link>
+                    </>
+                  }
                   uploadState={seasonalityUpload}
                   onDrop={(e: React.DragEvent) => {
                     e.preventDefault();
