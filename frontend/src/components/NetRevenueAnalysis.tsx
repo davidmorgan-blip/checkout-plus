@@ -20,12 +20,16 @@ import {
   MenuItem,
   Button,
   Tooltip,
-  IconButton
+  IconButton,
+  FormControlLabel,
+  Checkbox
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import DownloadIcon from '@mui/icons-material/Download';
+import WarningIcon from '@mui/icons-material/Warning';
 
 interface NetRevenueData {
   accountId: string;
@@ -56,6 +60,8 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [daysLiveFilter, setDaysLiveFilter] = useState('all');
+  const [exporting, setExporting] = useState(false);
+  const [necessaryChangesOnly, setNecessaryChangesOnly] = useState(false);
 
   const fetchNetRevenueData = async () => {
     try {
@@ -80,6 +86,43 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   useEffect(() => {
     fetchNetRevenueData();
   }, [daysLiveFilter]);
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const response = await fetch(`http://localhost:3001/api/net-revenue/net-revenue/export?daysLive=${daysLiveFilter}&necessaryChangesOnly=${necessaryChangesOnly}`);
+
+      if (!response.ok) {
+        throw new Error('Export failed');
+      }
+
+      // Get the filename from the Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'net-revenue-analysis.csv';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      // Create blob and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+      setError('Failed to export data');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const formatCurrency = (value: number) => {
     if (Math.abs(value) >= 1000000) {
@@ -205,19 +248,49 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
             Expected vs. actual net revenue based on trailing 4-week performance
           </Typography>
         </Box>
-        <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel>Days Live Filter</InputLabel>
-          <Select
-            value={daysLiveFilter}
-            onChange={(e) => setDaysLiveFilter(e.target.value)}
-            label="Days Live Filter"
-          >
-            <MenuItem value="all">All Merchants</MenuItem>
-            <MenuItem value="30">30+ Days Live</MenuItem>
-            <MenuItem value="60">60+ Days Live</MenuItem>
-            <MenuItem value="90">90+ Days Live</MenuItem>
-          </Select>
-        </FormControl>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+          <FormControl sx={{ minWidth: 200 }}>
+            <InputLabel>Days Live Filter</InputLabel>
+            <Select
+              value={daysLiveFilter}
+              onChange={(e) => setDaysLiveFilter(e.target.value)}
+              label="Days Live Filter"
+            >
+              <MenuItem value="all">All Merchants</MenuItem>
+              <MenuItem value="30">30+ Days Live</MenuItem>
+              <MenuItem value="60">60+ Days Live</MenuItem>
+              <MenuItem value="90">90+ Days Live</MenuItem>
+            </Select>
+          </FormControl>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Button
+              variant="contained"
+              startIcon={<DownloadIcon />}
+              onClick={handleExport}
+              disabled={exporting || loading}
+              sx={{ minWidth: 120 }}
+            >
+              {exporting ? 'Exporting...' : 'Export CSV'}
+            </Button>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={necessaryChangesOnly}
+                  onChange={(e) => setNecessaryChangesOnly(e.target.checked)}
+                  size="small"
+                />
+              }
+              label={
+                <Tooltip title="Export only merchants with -20% or worse volume forecast OR -1000bps or worse adoption rate variance">
+                  <Typography variant="caption" sx={{ cursor: 'help' }}>
+                    Export necessary changes only
+                  </Typography>
+                </Tooltip>
+              }
+              sx={{ ml: 0 }}
+            />
+          </Box>
+        </Box>
       </Box>
 
       {/* Summary Cards */}
@@ -387,12 +460,21 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                   .map((row) => (
                     <TableRow key={row.accountId} hover>
                       <TableCell>
-                        <Typography variant="body2" fontWeight="medium">
-                          {row.accountName || 'N/A'}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {formatPricingInfo(row.pricingModel || 'Unknown', row.labelsPaidBy || '')}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box>
+                            <Typography variant="body2" fontWeight="medium">
+                              {row.accountName || 'N/A'}
+                            </Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              {formatPricingInfo(row.pricingModel || 'Unknown', row.labelsPaidBy || '')}
+                            </Typography>
+                          </Box>
+                          {(row.adoptionRateActual < 1) && (
+                            <Tooltip title="Very low adoption rate (<1%) - may indicate systemic issues requiring investigation">
+                              <WarningIcon color="warning" sx={{ fontSize: 20 }} />
+                            </Tooltip>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell align="center">
                         <Chip

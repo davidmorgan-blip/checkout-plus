@@ -37,6 +37,10 @@ app.get('/api', (req, res) => {
       },
       analytics: {
         netRevenue: 'GET /api/analytics/net-revenue'
+      },
+      netRevenue: {
+        data: 'GET /api/net-revenue/net-revenue',
+        export: 'GET /api/net-revenue/net-revenue/export'
       }
     }
   });
