@@ -131,6 +131,7 @@ router.get('/net-revenue', async (req, res) => {
         o.loop_share_percent,
         o.blended_avg_cost_per_return,
         o.labels_paid_by,
+        o.benchmark_vertical,
         o.implementation_status as implementationStatus,
         (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) as daysLive
       FROM opportunities o
@@ -156,59 +157,116 @@ router.get('/net-revenue', async (req, res) => {
       });
     });
 
+    // Get seasonality data for seasonality-adjusted volume calculations
+    const seasonalityData = await new Promise<any[]>((resolve, reject) => {
+      db.all('SELECT vertical, iso_week, order_percentage FROM seasonality_curves ORDER BY vertical, iso_week', (err, rows: any[]) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(rows || []);
+      });
+    });
+
+    // Build seasonality lookup map
+    const seasonalityMap: { [key: string]: { [week: number]: number } } = {};
+    seasonalityData.forEach(row => {
+      if (!seasonalityMap[row.vertical]) {
+        seasonalityMap[row.vertical] = {};
+      }
+      seasonalityMap[row.vertical][row.iso_week] = row.order_percentage;
+    });
+
     // Calculate trailing 4-week performance for each merchant
     const netRevenueData: NetRevenueData[] = [];
 
     for (const opportunity of opportunities) {
-      // Get trailing 4-week performance, fallback to all-time if no recent data
+      // Get trailing 4-week performance with individual week data for seasonality adjustment
       const performanceQuery = `
         SELECT
-          COALESCE(recent.avg_weekly_orders, historical.avg_weekly_orders, 0) as avg_weekly_orders,
-          COALESCE(recent.avg_adoption_rate, historical.avg_adoption_rate, 0) as avg_adoption_rate
-        FROM (SELECT 1) dummy
-        LEFT JOIN (
-          SELECT
-            AVG(p.ecomm_orders) as avg_weekly_orders,
-            AVG(CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END) as avg_adoption_rate
-          FROM performance_actuals p
-          WHERE p.salesforce_account_id = ?
-            AND p.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
-            AND p.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
-            AND p.ecomm_orders > 0
-        ) recent ON 1=1
-        LEFT JOIN (
-          SELECT
-            AVG(p.ecomm_orders) as avg_weekly_orders,
-            AVG(CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END) as avg_adoption_rate
-          FROM performance_actuals p
-          WHERE p.salesforce_account_id = ?
-            AND p.ecomm_orders > 0
-        ) historical ON 1=1
+          p.iso_week,
+          p.ecomm_orders as actual_weekly_orders,
+          CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END as weekly_adoption_rate
+        FROM performance_actuals p
+        WHERE p.salesforce_account_id = ?
+          AND p.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+          AND p.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
+          AND p.ecomm_orders > 0
+        ORDER BY p.iso_week DESC
       `;
 
-      const performance = await new Promise<any>((resolve, reject) => {
-        db.get(performanceQuery, [opportunity.accountId, opportunity.accountId], (err, row: any) => {
+      const weeklyPerformance = await new Promise<any[]>((resolve, reject) => {
+        db.all(performanceQuery, [opportunity.accountId], (err, rows: any[]) => {
           if (err) {
             reject(err);
             return;
           }
-          resolve(row || {});
+          resolve(rows || []);
         });
       });
 
       // Get days live from opportunity query (already filtered at SQL level)
       const daysLive = opportunity.daysLive || 0;
 
-      // Skip only if no performance data exists at all
-      if (!performance.avg_weekly_orders || performance.avg_weekly_orders <= 0) {
-        // Still include merchant with zero performance for analysis
-        performance.avg_weekly_orders = 0;
-        performance.avg_adoption_rate = 0;
-      }
+      let projectedAnnualVolume = 0;
+      let actualAdoptionRate = 0;
 
-      // Calculate projected annual volume based on trailing performance
-      const projectedAnnualVolume = performance.avg_weekly_orders * 52;
-      const actualAdoptionRate = (performance.avg_adoption_rate || 0) * 100;
+      if (weeklyPerformance.length > 0) {
+        // Calculate seasonality-adjusted performance ratio (Volume tab methodology)
+        const vertical = opportunity.benchmark_vertical || 'Total ex. Swimwear';
+        const seasonalityCurve = vertical === 'Swimwear' ? 'Swimwear' : 'Total ex. Swimwear';
+
+        const recentWeeks = weeklyPerformance.map(week => {
+          const expectedWeeklyOrders = seasonalityMap[seasonalityCurve] && seasonalityMap[seasonalityCurve][week.iso_week]
+            ? opportunity.annual_order_volume * (seasonalityMap[seasonalityCurve][week.iso_week] / 100)
+            : opportunity.annual_order_volume / 52;
+
+          return {
+            actual_weekly_orders: week.actual_weekly_orders || 0,
+            expected_weekly_orders: expectedWeeklyOrders,
+            weekly_adoption_rate: week.weekly_adoption_rate || 0
+          };
+        });
+
+        // Calculate performance ratio
+        const avgActualOrders = recentWeeks.reduce((sum, w) => sum + w.actual_weekly_orders, 0) / recentWeeks.length;
+        const avgExpectedOrders = recentWeeks.reduce((sum, w) => sum + w.expected_weekly_orders, 0) / recentWeeks.length;
+        const performanceRatio = avgExpectedOrders > 0 ? avgActualOrders / avgExpectedOrders : 1;
+
+        // Apply performance ratio to annual volume (seasonality-adjusted)
+        projectedAnnualVolume = opportunity.annual_order_volume * performanceRatio;
+
+        // Calculate average adoption rate from recent weeks
+        actualAdoptionRate = (recentWeeks.reduce((sum, w) => sum + w.weekly_adoption_rate, 0) / recentWeeks.length) * 100;
+      } else {
+        // Fallback to historical average if no recent data
+        const fallbackQuery = `
+          SELECT
+            AVG(p.ecomm_orders) as avg_weekly_orders,
+            AVG(CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END) as avg_adoption_rate
+          FROM performance_actuals p
+          WHERE p.salesforce_account_id = ?
+            AND p.ecomm_orders > 0
+        `;
+
+        const fallbackPerformance = await new Promise<any>((resolve, reject) => {
+          db.get(fallbackQuery, [opportunity.accountId], (err, row: any) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            resolve(row || {});
+          });
+        });
+
+        if (fallbackPerformance.avg_weekly_orders && fallbackPerformance.avg_weekly_orders > 0) {
+          projectedAnnualVolume = fallbackPerformance.avg_weekly_orders * 52;
+          actualAdoptionRate = (fallbackPerformance.avg_adoption_rate || 0) * 100;
+        } else {
+          projectedAnnualVolume = 0;
+          actualAdoptionRate = 0;
+        }
+      }
 
       // Calculate expected and actual revenue
       const expectedRevenue = calculateExpectedRevenue(opportunity);
