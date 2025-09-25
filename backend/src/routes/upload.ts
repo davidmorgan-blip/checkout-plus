@@ -140,15 +140,27 @@ router.post('/seasonality', upload.single('csv'), async (req, res) => {
 router.get('/status', async (req, res) => {
   try {
     const opportunityCount = await database.get('SELECT COUNT(*) as count FROM opportunities');
+    const opportunityLastUpdate = await database.get('SELECT MAX(created_at) as last_updated FROM opportunities');
+
     const performanceCount = await database.get('SELECT COUNT(*) as count FROM performance_actuals');
+    const performanceWeeksCount = await database.get('SELECT COUNT(DISTINCT order_week) as count FROM performance_actuals');
+    const performanceLastUpdate = await database.get('SELECT MAX(created_at) as last_updated FROM performance_actuals');
+
     const seasonalityCount = await database.get('SELECT COUNT(*) as count FROM seasonality_curves');
+    const seasonalityVerticals = await database.get('SELECT COUNT(DISTINCT vertical) as count FROM seasonality_curves');
+    const seasonalityLastUpdate = await database.get('SELECT MAX(created_at) as last_updated FROM seasonality_curves');
 
     res.json({
       success: true,
       data: {
         opportunities: opportunityCount?.count || 0,
+        opportunitiesLastUpdated: opportunityLastUpdate?.last_updated || null,
         performanceRecords: performanceCount?.count || 0,
-        seasonalityCurves: seasonalityCount?.count || 0
+        performanceWeeks: performanceWeeksCount?.count || 0,
+        performanceLastUpdated: performanceLastUpdate?.last_updated || null,
+        seasonalityCurves: seasonalityCount?.count || 0,
+        seasonalityVerticals: seasonalityVerticals?.count || 0,
+        seasonalityLastUpdated: seasonalityLastUpdate?.last_updated || null
       }
     });
   } catch (error) {

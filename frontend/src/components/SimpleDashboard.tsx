@@ -53,8 +53,19 @@ function TabPanel(props: TabPanelProps) {
 
 interface UploadStatus {
   opportunities: number;
+  opportunitiesLastUpdated?: string | null;
   performanceRecords: number;
+  performanceWeeks: number;
+  performanceLastUpdated?: string | null;
   seasonalityCurves: number;
+  seasonalityVerticals: number;
+  seasonalityLastUpdated?: string | null;
+}
+
+interface OpportunitiesBreakdown {
+  totalOpportunities: number;
+  opportunitiesWithActuals: number;
+  opportunitiesWithoutActuals: number;
 }
 
 interface FileUploadState {
@@ -66,11 +77,19 @@ interface FileUploadState {
 }
 
 export default function SimpleDashboard() {
-  const [tabValue, setTabValue] = useState(0);
+  const [tabValue, setTabValue] = useState(3); // Start with Data Upload tab
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
     opportunities: 0,
     performanceRecords: 0,
+    performanceWeeks: 0,
     seasonalityCurves: 0,
+    seasonalityVerticals: 0,
+  });
+
+  const [opportunitiesBreakdown, setOpportunitiesBreakdown] = useState<OpportunitiesBreakdown>({
+    totalOpportunities: 0,
+    opportunitiesWithActuals: 0,
+    opportunitiesWithoutActuals: 0,
   });
 
   const [opportunitiesUpload, setOpportunitiesUpload] = useState<FileUploadState>({
@@ -109,9 +128,45 @@ export default function SimpleDashboard() {
     }
   };
 
+  const fetchOpportunitiesBreakdown = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/api/analytics/overview');
+      const result = await response.json();
+      if (result.success && result.data.metrics) {
+        setOpportunitiesBreakdown({
+          totalOpportunities: result.data.metrics.totalOpportunities || 0,
+          opportunitiesWithActuals: result.data.metrics.opportunitiesWithActuals || 0,
+          opportunitiesWithoutActuals: result.data.metrics.opportunitiesWithoutActuals || 0,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch opportunities breakdown:', error);
+    }
+  };
+
   useEffect(() => {
     fetchUploadStatus();
   }, []);
+
+  // Check if all data is loaded
+  const dataLoaded = uploadStatus.opportunities > 0 &&
+                     uploadStatus.performanceRecords > 0 &&
+                     uploadStatus.seasonalityCurves > 0;
+
+  // Set default tab based on data loaded status
+  useEffect(() => {
+    if (dataLoaded && tabValue === 3) {
+      // If data becomes available and we're still on Data Upload tab, switch to Net Revenue
+      setTabValue(0);
+    }
+  }, [dataLoaded, tabValue]);
+
+  // Fetch opportunities breakdown when data is loaded
+  useEffect(() => {
+    if (dataLoaded) {
+      fetchOpportunitiesBreakdown();
+    }
+  }, [dataLoaded]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -299,10 +354,6 @@ export default function SimpleDashboard() {
     );
   };
 
-  const dataLoaded = uploadStatus.opportunities > 0 &&
-                   uploadStatus.performanceRecords > 0 &&
-                   uploadStatus.seasonalityCurves > 0;
-
   return (
     <Box sx={{ flexGrow: 1 }}>
       <AppBar position="static" sx={{ backgroundColor: '#1976d2' }}>
@@ -328,8 +379,18 @@ export default function SimpleDashboard() {
                     Opportunities
                   </Typography>
                   <Typography variant="h4">
-                    {uploadStatus.opportunities}
+                    {opportunitiesBreakdown.totalOpportunities || uploadStatus.opportunities}
                   </Typography>
+                  {opportunitiesBreakdown.totalOpportunities > 0 && (
+                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                      {opportunitiesBreakdown.opportunitiesWithActuals} with actuals • {opportunitiesBreakdown.opportunitiesWithoutActuals} pending launch
+                    </Typography>
+                  )}
+                  {uploadStatus.opportunitiesLastUpdated && (
+                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                      Updated on {new Date(uploadStatus.opportunitiesLastUpdated).toLocaleDateString()}
+                    </Typography>
+                  )}
                 </Box>
                 <TrendingUpIcon color="primary" sx={{ fontSize: 40 }} />
               </Box>
@@ -346,6 +407,16 @@ export default function SimpleDashboard() {
                   <Typography variant="h4">
                     {uploadStatus.performanceRecords}
                   </Typography>
+                  {uploadStatus.performanceWeeks > 0 && (
+                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                      {uploadStatus.performanceWeeks} distinct weeks of data
+                    </Typography>
+                  )}
+                  {uploadStatus.performanceLastUpdated && (
+                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                      Updated on {new Date(uploadStatus.performanceLastUpdated).toLocaleDateString()}
+                    </Typography>
+                  )}
                 </Box>
                 <AnalyticsIcon color="secondary" sx={{ fontSize: 40 }} />
               </Box>
@@ -359,9 +430,21 @@ export default function SimpleDashboard() {
                   <Typography color="textSecondary" gutterBottom variant="body2">
                     Seasonality Curves
                   </Typography>
-                  <Typography variant="h4">
-                    {uploadStatus.seasonalityCurves}
+                  <Typography variant="h6">
+                    {uploadStatus.seasonalityCurves > 0 && uploadStatus.seasonalityLastUpdated
+                      ? `Updated on ${new Date(uploadStatus.seasonalityLastUpdated).toLocaleDateString()}`
+                      : 'Not available'}
                   </Typography>
+                  {uploadStatus.seasonalityVerticals > 0 && (
+                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                      {uploadStatus.seasonalityVerticals} verticals represented*
+                    </Typography>
+                  )}
+                  {uploadStatus.seasonalityVerticals > 0 && (
+                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.25, display: 'block', fontSize: '0.65rem', fontStyle: 'italic' }}>
+                      *Only Swimwear uses specific curve; all others use "Total ex. Swimwear"
+                    </Typography>
+                  )}
                 </Box>
                 <TrendingUpIcon color="success" sx={{ fontSize: 40 }} />
               </Box>
@@ -394,36 +477,48 @@ export default function SimpleDashboard() {
           <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
             <Tabs value={tabValue} onChange={handleTabChange} aria-label="dashboard tabs">
               <Tab
-                icon={<UploadFileIcon />}
-                label="Data Upload"
+                icon={<AttachMoneyIcon />}
+                label="Net Revenue"
                 id="dashboard-tab-0"
                 aria-controls="dashboard-tabpanel-0"
-              />
-              <Tab
-                icon={<TrendingUpIcon />}
-                label="Adoption Rate"
-                id="dashboard-tab-1"
-                aria-controls="dashboard-tabpanel-1"
                 disabled={!dataLoaded}
               />
               <Tab
                 icon={<ShowChartIcon />}
                 label="Volume"
+                id="dashboard-tab-1"
+                aria-controls="dashboard-tabpanel-1"
+                disabled={!dataLoaded}
+              />
+              <Tab
+                icon={<TrendingUpIcon />}
+                label="Adoption Rate"
                 id="dashboard-tab-2"
                 aria-controls="dashboard-tabpanel-2"
                 disabled={!dataLoaded}
               />
               <Tab
-                icon={<AttachMoneyIcon />}
-                label="Net Revenue"
+                icon={<UploadFileIcon />}
+                label="Data Upload"
                 id="dashboard-tab-3"
                 aria-controls="dashboard-tabpanel-3"
-                disabled={!dataLoaded}
               />
             </Tabs>
           </Box>
 
           <TabPanel value={tabValue} index={0}>
+            <NetRevenueAnalysis />
+          </TabPanel>
+
+          <TabPanel value={tabValue} index={1}>
+            <VolumeAnalysis />
+          </TabPanel>
+
+          <TabPanel value={tabValue} index={2}>
+            <PerformanceOverview />
+          </TabPanel>
+
+          <TabPanel value={tabValue} index={3}>
             <Typography variant="h5" gutterBottom>
               CSV Data Upload
             </Typography>
@@ -481,18 +576,6 @@ export default function SimpleDashboard() {
                 All CSV files have been successfully uploaded! You can now access the Performance and Volume analysis tabs.
               </Alert>
             )}
-          </TabPanel>
-
-          <TabPanel value={tabValue} index={1}>
-            <PerformanceOverview />
-          </TabPanel>
-
-          <TabPanel value={tabValue} index={2}>
-            <VolumeAnalysis />
-          </TabPanel>
-
-          <TabPanel value={tabValue} index={3}>
-            <NetRevenueAnalysis />
           </TabPanel>
         </Card>
       </Container>
