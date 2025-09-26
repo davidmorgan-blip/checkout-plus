@@ -743,7 +743,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                 {/* Insufficient Data Groups */}
                 {stratifiedStats.groupStats.filter(group => group.dataType === 'insufficient').length > 0 && (
                   <>
-                    <TableRow sx={{ backgroundColor: 'grey.200', '& td': { fontWeight: 'bold', color: 'grey.700' } }}>
+                    <TableRow sx={{ backgroundColor: 'grey.300', '& td': { fontWeight: 'bold', color: 'grey.800' } }}>
                       <TableCell colSpan={7} align="left">
                         <Typography variant="subtitle2" fontWeight="bold">
                           INSUFFICIENT DATA MERCHANTS (Original Projections)
@@ -786,7 +786,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                         </TableRow>
                       ))}
                     {/* Insufficient Data Subtotal */}
-                    <TableRow sx={{ backgroundColor: 'warning.light', '& td': { fontWeight: 'bold' } }}>
+                    <TableRow sx={{ backgroundColor: 'grey.300', '& td': { fontWeight: 'bold', color: 'grey.800' } }}>
                       <TableCell colSpan={2}><strong>INSUFFICIENT DATA SUBTOTAL</strong></TableCell>
                       <TableCell align="right">{stratifiedStats.insufficientTotals.merchantCount}</TableCell>
                       <TableCell align="right">{formatCurrency(stratifiedStats.insufficientTotals.totalOriginalNetAcv)}</TableCell>
