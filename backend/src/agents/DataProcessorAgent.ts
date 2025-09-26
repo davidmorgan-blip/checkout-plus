@@ -264,26 +264,54 @@ export class DataProcessorAgent {
   }
 
   async saveOpportunities(opportunities: OpportunityData[]): Promise<void> {
-    const sql = `
-      INSERT OR REPLACE INTO opportunities (
-        account_casesafe_id, account_name, opportunity_id, benchmark_vertical,
-        close_date, contract_effective_date, checkout_enabled, pricing_model,
-        labels_paid_by, loop_share_percent, est_offset_net_revenue, initial_offset_fee,
-        refund_handling_fee, annual_order_volume, blended_avg_cost_per_return,
-        domestic_return_rate, adoption_rate, implementation_status, net_acv,
-        company_acv_starting_value, company_acv_ending_value, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `;
+    // Use a transaction to ensure both DELETE and INSERT operations complete atomically
+    await database.run('BEGIN TRANSACTION');
 
-    for (const opp of opportunities) {
-      await database.run(sql, [
-        opp.accountId, opp.accountName, opp.opportunityId, opp.benchmarkVertical,
-        opp.closeDate, opp.contractEffectiveDate, opp.checkoutEnabled, opp.pricingModel,
-        opp.labelsPaidBy, opp.loopSharePercent, opp.estOffsetNetRevenue, opp.initialOffsetFee,
-        opp.refundHandlingFee, opp.annualOrderVolume, opp.blendedAvgCostPerReturn,
-        opp.domesticReturnRate, opp.adoptionRate, opp.implementationStatus, opp.netAcv,
-        opp.companyAcvStartingValue, opp.companyAcvEndingValue
-      ]);
+    try {
+      // Filter to keep only the most recent opportunity per account based on close date
+      const latestOpportunities = new Map<string, OpportunityData>();
+
+      for (const opp of opportunities) {
+        const accountId = opp.accountId;
+        const existing = latestOpportunities.get(accountId);
+
+        if (!existing || this.parseTimezoneNeutralDate(opp.closeDate) > this.parseTimezoneNeutralDate(existing.closeDate)) {
+          latestOpportunities.set(accountId, opp);
+        }
+      }
+
+      const filteredOpportunities = Array.from(latestOpportunities.values());
+      console.log(`Filtered ${opportunities.length} opportunities down to ${filteredOpportunities.length} (keeping most recent per account)`);
+
+      // Clear existing opportunities data to prevent stale records
+      await database.run('DELETE FROM opportunities');
+
+      const sql = `
+        INSERT OR REPLACE INTO opportunities (
+          account_casesafe_id, account_name, opportunity_id, benchmark_vertical,
+          close_date, contract_effective_date, checkout_enabled, pricing_model,
+          labels_paid_by, loop_share_percent, est_offset_net_revenue, initial_offset_fee,
+          refund_handling_fee, annual_order_volume, blended_avg_cost_per_return,
+          domestic_return_rate, adoption_rate, implementation_status, net_acv,
+          company_acv_starting_value, company_acv_ending_value, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `;
+
+      for (const opp of filteredOpportunities) {
+        await database.run(sql, [
+          opp.accountId, opp.accountName, opp.opportunityId, opp.benchmarkVertical,
+          opp.closeDate, opp.contractEffectiveDate, opp.checkoutEnabled, opp.pricingModel,
+          opp.labelsPaidBy, opp.loopSharePercent, opp.estOffsetNetRevenue, opp.initialOffsetFee,
+          opp.refundHandlingFee, opp.annualOrderVolume, opp.blendedAvgCostPerReturn,
+          opp.domesticReturnRate, opp.adoptionRate, opp.implementationStatus, opp.netAcv,
+          opp.companyAcvStartingValue, opp.companyAcvEndingValue
+        ]);
+      }
+
+      await database.run('COMMIT');
+    } catch (error) {
+      await database.run('ROLLBACK');
+      throw error;
     }
   }
 
@@ -331,13 +359,24 @@ export class DataProcessorAgent {
     }
   }
 
+  private parseTimezoneNeutralDate(dateStr: string): Date {
+    if (!dateStr) return new Date();
+    const parts = dateStr.split('-');
+    return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  }
+
   private calculateDaysLive(firstOfferDate: string, orderWeek: string): number {
     if (!firstOfferDate || !orderWeek) return 0;
 
     try {
-      const startDate = new Date(firstOfferDate);
-      const endDate = new Date(orderWeek);
-      const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+      // Parse dates in local timezone to avoid timezone shift issues
+      const startDate = this.parseTimezoneNeutralDate(firstOfferDate);
+      const weekStart = this.parseTimezoneNeutralDate(orderWeek);
+      // Calculate week ending date (order_week + 6 days)
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+
+      const diffTime = Math.abs(weekEnd.getTime() - startDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       return diffDays;
     } catch (error) {

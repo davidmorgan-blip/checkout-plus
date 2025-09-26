@@ -3,9 +3,9 @@
 -- Opportunities (from Salesforce CSV)
 CREATE TABLE IF NOT EXISTS opportunities (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  account_casesafe_id TEXT UNIQUE NOT NULL, -- Opportunity: Account Casesafe ID
+  account_casesafe_id TEXT NOT NULL, -- Opportunity: Account Casesafe ID
   account_name TEXT, -- Opportunity: Account Name
-  opportunity_id TEXT, -- Opportunity: Opportunity ID
+  opportunity_id TEXT UNIQUE NOT NULL, -- Opportunity: Opportunity ID
   benchmark_vertical TEXT, -- Opportunity: Benchmark Vertical
   close_date DATE, -- Opportunity: Close Date
   contract_effective_date DATE, -- Opportunity: Ordway Contract Effective Date

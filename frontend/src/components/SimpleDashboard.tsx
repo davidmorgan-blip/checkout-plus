@@ -59,6 +59,7 @@ interface UploadStatus {
   opportunitiesLastUpdated?: string | null;
   performanceRecords: number;
   performanceWeeks: number;
+  performanceMaxOrderWeek?: string | null;
   performanceLastUpdated?: string | null;
   seasonalityCurves: number;
   seasonalityVerticals: number;
@@ -421,6 +422,18 @@ export default function SimpleDashboard() {
                   {uploadStatus.performanceWeeks > 0 && (
                     <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
                       {uploadStatus.performanceWeeks} distinct weeks of data
+                    </Typography>
+                  )}
+                  {uploadStatus.performanceMaxOrderWeek && (
+                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                      Through week ending {(() => {
+                        // Parse date in local timezone to avoid timezone shift issues
+                        const dateParts = uploadStatus.performanceMaxOrderWeek.split('-');
+                        const weekStart = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
+                        const weekEnd = new Date(weekStart);
+                        weekEnd.setDate(weekStart.getDate() + 6); // Add 6 days to get week ending
+                        return weekEnd.toLocaleDateString();
+                      })()}
                     </Typography>
                   )}
                   {uploadStatus.performanceLastUpdated && (

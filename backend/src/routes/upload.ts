@@ -144,6 +144,7 @@ router.get('/status', async (req, res) => {
 
     const performanceCount = await database.get('SELECT COUNT(*) as count FROM performance_actuals');
     const performanceWeeksCount = await database.get('SELECT COUNT(DISTINCT order_week) as count FROM performance_actuals');
+    const performanceMaxOrderWeek = await database.get('SELECT MAX(order_week) as max_order_week FROM performance_actuals');
     const performanceLastUpdate = await database.get('SELECT MAX(created_at) as last_updated FROM performance_actuals');
 
     const seasonalityCount = await database.get('SELECT COUNT(*) as count FROM seasonality_curves');
@@ -157,6 +158,7 @@ router.get('/status', async (req, res) => {
         opportunitiesLastUpdated: opportunityLastUpdate?.last_updated || null,
         performanceRecords: performanceCount?.count || 0,
         performanceWeeks: performanceWeeksCount?.count || 0,
+        performanceMaxOrderWeek: performanceMaxOrderWeek?.max_order_week || null,
         performanceLastUpdated: performanceLastUpdate?.last_updated || null,
         seasonalityCurves: seasonalityCount?.count || 0,
         seasonalityVerticals: seasonalityVerticals?.count || 0,
