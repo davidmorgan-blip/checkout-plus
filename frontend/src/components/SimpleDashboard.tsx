@@ -26,9 +26,11 @@ import ShowChartIcon from '@mui/icons-material/ShowChart';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import PerformanceOverview from './PerformanceOverview';
 import VolumeAnalysis from './VolumeAnalysis';
 import NetRevenueAnalysis from './NetRevenueAnalysis';
+import AcvImpactsAnalysis from './AcvImpactsAnalysis';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -80,6 +82,7 @@ interface FileUploadState {
 export default function SimpleDashboard() {
   const [tabValue, setTabValue] = useState(0); // Start with Net Revenue tab (will fallback to Data Upload if disabled)
   const [userSelectedTab, setUserSelectedTab] = useState(false); // Track if user manually selected a tab
+  const [daysLiveFilter, setDaysLiveFilter] = useState('all'); // Days live filter for ACV Impacts tab
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
     opportunities: 0,
     performanceRecords: 0,
@@ -158,10 +161,10 @@ export default function SimpleDashboard() {
   // Set default tab based on data loaded status
   useEffect(() => {
     if (!userSelectedTab) {
-      if (!dataLoaded && tabValue !== 3) {
+      if (!dataLoaded && tabValue !== 4) {
         // If no data and we're not on Data Upload tab, switch to Data Upload
-        setTabValue(3);
-      } else if (dataLoaded && tabValue === 3) {
+        setTabValue(4);
+      } else if (dataLoaded && tabValue === 4) {
         // If data is loaded and we're on Data Upload tab, switch to Net Revenue
         setTabValue(0);
       }
@@ -506,10 +509,17 @@ export default function SimpleDashboard() {
                 disabled={!dataLoaded}
               />
               <Tab
-                icon={<UploadFileIcon />}
-                label="Data Upload"
+                icon={<AccountBalanceIcon />}
+                label="ACV Impacts"
                 id="dashboard-tab-3"
                 aria-controls="dashboard-tabpanel-3"
+                disabled={!dataLoaded}
+              />
+              <Tab
+                icon={<UploadFileIcon />}
+                label="Data Upload"
+                id="dashboard-tab-4"
+                aria-controls="dashboard-tabpanel-4"
               />
             </Tabs>
           </Box>
@@ -527,6 +537,12 @@ export default function SimpleDashboard() {
           </TabPanel>
 
           <TabPanel value={tabValue} index={3}>
+            <AcvImpactsAnalysis
+              daysLiveFilter={daysLiveFilter}
+              onDaysLiveFilterChange={setDaysLiveFilter}
+            />
+          </TabPanel>
+          <TabPanel value={tabValue} index={4}>
             <Typography variant="h5" gutterBottom>
               CSV Data Upload
             </Typography>

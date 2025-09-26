@@ -58,7 +58,7 @@ router.get('/overview', async (req, res) => {
         SELECT
           o.account_casesafe_id as salesforce_account_id,
           o.account_name as merchant_name,
-          (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live,
+          (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live,
           CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN CAST(COALESCE(p.accepted_offers, 0) AS REAL) / p.ecomm_orders ELSE 0 END as current_adoption_rate,
           o.adoption_rate as expected_adoption_rate,
           CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN
@@ -96,10 +96,10 @@ router.get('/overview', async (req, res) => {
 
       if (daysLiveFilter !== 'all') {
         if (daysLiveFilter === 'under30') {
-          query += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
+          query += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
         } else {
           const threshold = parseInt(daysLiveFilter);
-          query += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+          query += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
         }
       }
 
@@ -235,7 +235,7 @@ router.get('/merchants', async (req, res) => {
         o.account_casesafe_id as salesforce_account_id,
         o.opportunity_id,
         o.account_name as merchant_name,
-        (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live,
+        (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live,
         CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END as current_adoption_rate,
         o.adoption_rate as expected_adoption_rate,
         CASE WHEN p.ecomm_orders > 0 THEN
@@ -320,18 +320,18 @@ router.get('/merchants', async (req, res) => {
       WHERE o.checkout_enabled = 'Yes'
         AND o.annual_order_volume > 0
         AND o.pricing_model != 'Flat'
-        AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
+        AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
     `;
 
     const params: any[] = [];
 
     if (daysLiveFilter !== 'all') {
       if (daysLiveFilter === 'under30') {
-        baseQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < ?`;
+        baseQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < ?`;
         params.push(30);
       } else {
         const threshold = parseInt(daysLiveFilter);
-        baseQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
+        baseQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
         params.push(threshold);
       }
     }
@@ -399,11 +399,11 @@ router.get('/variance-contributors', async (req, res) => {
         (p.adoption_rate_avg - o.adoption_rate) as adoption_variance,
         p.order_count,
         (p.order_count * (p.adoption_rate_avg - o.adoption_rate)) as weighted_variance_impact,
-        JULIANDAY('now') - JULIANDAY(p.first_offer_date) as days_live
+        JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) as days_live
       FROM performance_actuals p
       JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
       WHERE p.iso_week = (SELECT MAX(iso_week) FROM performance_actuals)
-        AND (JULIANDAY('now') - JULIANDAY(p.first_offer_date)) >= 30
+        AND (JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date)) >= 30
       ORDER BY ABS(weighted_variance_impact) DESC
       LIMIT 10
     `;
@@ -487,7 +487,7 @@ router.get('/volume', async (req, res) => {
         o.labels_paid_by,
         o.adoption_rate as expected_adoption_rate,
         CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN CAST(COALESCE(p.accepted_offers, 0) AS REAL) / p.ecomm_orders ELSE 0 END as actual_adoption_rate,
-        (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live
+        (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live
       FROM opportunities o
       LEFT JOIN performance_actuals p ON o.account_casesafe_id = p.salesforce_account_id
       WHERE o.checkout_enabled = 'Yes'
@@ -499,11 +499,11 @@ router.get('/volume', async (req, res) => {
     const params: any[] = [];
     if (daysLiveFilter !== 'all') {
       if (daysLiveFilter === 'under30') {
-        weeklyTrendsQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < ?`;
+        weeklyTrendsQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < ?`;
         params.push(30);
       } else {
         const threshold = parseInt(daysLiveFilter);
-        weeklyTrendsQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
+        weeklyTrendsQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
         params.push(threshold);
       }
     }
@@ -651,14 +651,14 @@ router.get('/volume', async (req, res) => {
 //         p.ecomm_orders as actual_weekly_orders,
 //         o.benchmark_vertical,
 //         o.weekly_orders as expected_weekly_orders,
-//         JULIANDAY('now') - JULIANDAY(p.first_offer_date) as days_live,
+//         JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) as days_live,
 //         (p.ecomm_orders - o.weekly_orders) as variance_orders,
 //         CASE WHEN o.weekly_orders > 0 THEN
 //           ((CAST(p.ecomm_orders AS REAL) - o.weekly_orders) / o.weekly_orders * 100)
 //         ELSE 0 END as variance_percentage
 //       FROM performance_actuals p
 //       JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
-//       ${daysLiveFilter !== 'all' ? `WHERE (JULIANDAY('now') - JULIANDAY(p.first_offer_date)) >= ${parseInt(daysLiveFilter)}` : ''}
+//       ${daysLiveFilter !== 'all' ? `WHERE (JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date)) >= ${parseInt(daysLiveFilter)}` : ''}
 //       ORDER BY p.merchant_name, p.iso_week
 //     `;
 
@@ -680,12 +680,12 @@ router.get('/volume', async (req, res) => {
 //         o.benchmark_vertical,
 //         AVG(p.ecomm_orders) as trailing_4week_avg_orders,
 //         o.weekly_orders as expected_weekly_orders,
-//         JULIANDAY('now') - JULIANDAY(p.first_offer_date) as days_live
+//         JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) as days_live
 //       FROM performance_actuals p
 //       JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
 //       WHERE p.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
 //         AND p.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
-//         ${daysLiveFilter !== 'all' ? `AND (JULIANDAY('now') - JULIANDAY(p.first_offer_date)) >= ${parseInt(daysLiveFilter)}` : ''}
+//         ${daysLiveFilter !== 'all' ? `AND (JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date)) >= ${parseInt(daysLiveFilter)}` : ''}
 //       GROUP BY p.salesforce_account_id, p.merchant_name, o.benchmark_vertical, o.weekly_orders
 //       HAVING COUNT(p.iso_week) >= 4
 //     `;
@@ -902,7 +902,7 @@ router.get('/net-revenue-original', async (req, res) => {
         o.blended_avg_cost_per_return,
         o.adoption_rate as expected_adoption_rate,
         CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END as actual_adoption_rate,
-        JULIANDAY('now') - JULIANDAY(p.first_offer_date) as days_live
+        JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) as days_live
       FROM performance_actuals p
       JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
       WHERE o.pricing_model != 'Flat'
@@ -911,7 +911,7 @@ router.get('/net-revenue-original', async (req, res) => {
     const params: any[] = [];
     if (daysLiveFilter !== 'all') {
       const threshold = parseInt(daysLiveFilter);
-      revenueQuery += ` AND (JULIANDAY('now') - JULIANDAY(p.first_offer_date)) >= ?`;
+      revenueQuery += ` AND (JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date)) >= ?`;
       params.push(threshold);
     }
 

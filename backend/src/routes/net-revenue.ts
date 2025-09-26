@@ -143,21 +143,20 @@ router.get('/net-revenue', async (req, res) => {
         o.labels_paid_by,
         o.benchmark_vertical,
         o.implementation_status as implementationStatus,
-        (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) as daysLive
+        (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) as daysLive
       FROM opportunities o
       WHERE o.checkout_enabled = 'Yes'
-        AND o.annual_order_volume > 0
-        AND o.pricing_model != 'Flat'
-        AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
+        AND (o.annual_order_volume > 0 OR o.pricing_model = 'Flat')
+        AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
     `;
 
     // Apply days live filter at SQL level for consistency with other tabs
     if (daysLiveFilter !== 'all') {
       if (daysLiveFilter === 'under30') {
-        opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
+        opportunitiesQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
       } else {
         const threshold = parseInt(daysLiveFilter);
-        opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+        opportunitiesQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
       }
     }
 
@@ -225,7 +224,12 @@ router.get('/net-revenue', async (req, res) => {
       let projectedAnnualVolume = 0;
       let actualAdoptionRate = 0;
 
-      if (weeklyPerformance.length >= 4) {
+      // For Flat pricing, performance data isn't needed for revenue calculation
+      if (opportunity.pricingModel === 'Flat') {
+        // Use expected values for Flat pricing (no performance variance)
+        projectedAnnualVolume = opportunity.annual_order_volume;
+        actualAdoptionRate = opportunity.adoption_rate || 50;
+      } else if (weeklyPerformance.length >= 4) {
         // Calculate seasonality-adjusted performance ratio (Volume tab methodology)
         const vertical = opportunity.benchmark_vertical || 'Total ex. Swimwear';
         const seasonalityCurve = vertical === 'Swimwear' ? 'Swimwear' : 'Total ex. Swimwear';
@@ -312,8 +316,8 @@ router.get('/net-revenue', async (req, res) => {
         adjustmentStatus = 'Not Adjusted';
       }
 
-      // Only include merchants with sufficient data for forecasting (4+ weeks)
-      if (weeklyPerformance.length >= 4) {
+      // Include merchants with sufficient data for forecasting (4+ weeks) OR Flat pricing models
+      if (weeklyPerformance.length >= 4 || opportunity.pricingModel === 'Flat') {
         netRevenueData.push({
         accountId: opportunity.accountId,
         opportunityId: opportunity.opportunityId,
@@ -383,21 +387,20 @@ router.get('/net-revenue/export', async (req, res) => {
         o.labels_paid_by,
         o.benchmark_vertical,
         o.implementation_status as implementationStatus,
-        (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) as daysLive
+        (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) as daysLive
       FROM opportunities o
       WHERE o.checkout_enabled = 'Yes'
-        AND o.annual_order_volume > 0
-        AND o.pricing_model != 'Flat'
-        AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
+        AND (o.annual_order_volume > 0 OR o.pricing_model = 'Flat')
+        AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
     `;
 
     // Apply days live filter at SQL level for consistency with other tabs
     if (daysLiveFilter !== 'all') {
       if (daysLiveFilter === 'under30') {
-        opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
+        opportunitiesQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
       } else {
         const threshold = parseInt(daysLiveFilter);
-        opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+        opportunitiesQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
       }
     }
 
@@ -531,7 +534,7 @@ router.get('/net-revenue/export', async (req, res) => {
       if (weeklyPerformance.length >= 4) {
         const merchantData: any = {
         'SFDC Account ID': opportunity.accountId,
-        'SFDC Opportunity ID': opportunity.opportunity_id || '',
+        'SFDC Opportunity ID': opportunity.opportunityId || '',
         'Merchant Name': opportunity.accountName,
         'Original 12 Month Order Volume': opportunity.annual_order_volume,
         'Original Adoption Rate': ((opportunity.adoption_rate || 50) / 100).toFixed(2)
@@ -641,6 +644,227 @@ router.get('/net-revenue/export', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to export net revenue analysis'
+    });
+  } finally {
+    db.close();
+  }
+});
+
+// ACV Impacts Analysis endpoint
+router.get('/acv-impacts', async (req, res) => {
+  const db = new Database(dbPath);
+
+  try {
+    const daysLiveFilter = req.query.daysLive as string;
+    const search = req.query.search as string;
+
+    // Build query with filters
+    let opportunitiesQuery = `
+      SELECT
+        o.account_casesafe_id as accountId,
+        o.account_name,
+        o.opportunity_id as opportunityId,
+        o.benchmark_vertical,
+        o.annual_order_volume,
+        o.pricing_model,
+        o.labels_paid_by,
+        o.loop_share_percent,
+        o.est_offset_net_revenue,
+        o.initial_offset_fee,
+        o.refund_handling_fee,
+        o.blended_avg_cost_per_return,
+        o.domestic_return_rate,
+        o.adoption_rate,
+        o.net_acv,
+        o.company_acv_starting_value,
+        o.company_acv_ending_value,
+        (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date)
+         FROM performance_actuals p
+         WHERE p.salesforce_account_id = o.account_casesafe_id
+         LIMIT 1) as daysLive
+      FROM opportunities o
+      WHERE o.checkout_enabled = 'Yes'
+        AND o.net_acv IS NOT NULL
+        AND o.net_acv != 0
+        AND EXISTS (
+          SELECT 1 FROM performance_actuals p
+          WHERE p.salesforce_account_id = o.account_casesafe_id
+        )
+    `;
+
+    // Apply days live filter
+    if (daysLiveFilter && daysLiveFilter !== 'all') {
+      if (daysLiveFilter === 'under30') {
+        opportunitiesQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
+      } else {
+        const threshold = parseInt(daysLiveFilter);
+        opportunitiesQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+      }
+    }
+
+    // Apply search filter
+    if (search) {
+      opportunitiesQuery += ` AND LOWER(o.account_name) LIKE LOWER('%${search}%')`;
+    }
+
+    const opportunities = await new Promise<any[]>((resolve, reject) => {
+      db.all(opportunitiesQuery, (err, rows: any[]) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(rows || []);
+      });
+    });
+
+    // Get seasonality data
+    const seasonalityData = await new Promise<any[]>((resolve, reject) => {
+      db.all('SELECT vertical, iso_week, order_percentage FROM seasonality_curves ORDER BY vertical, iso_week', (err, rows: any[]) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(rows || []);
+      });
+    });
+
+    // Build seasonality lookup map
+    const seasonalityMap: { [key: string]: { [week: number]: number } } = {};
+    seasonalityData.forEach(row => {
+      if (!seasonalityMap[row.vertical]) {
+        seasonalityMap[row.vertical] = {};
+      }
+      seasonalityMap[row.vertical][row.iso_week] = row.order_percentage;
+    });
+
+    // Calculate ACV impacts for each merchant
+    const merchantData: any[] = [];
+    let totalOriginalNetAcv = 0;
+    let totalProjectedNetAcv = 0;
+
+    for (const opportunity of opportunities) {
+      // Get trailing 4-week performance for projection calculation
+      const performanceQuery = `
+        SELECT
+          p.iso_week,
+          p.ecomm_orders as actual_weekly_orders,
+          CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END as weekly_adoption_rate
+        FROM performance_actuals p
+        WHERE p.salesforce_account_id = ?
+          AND p.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+          AND p.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
+          AND p.ecomm_orders > 0
+        ORDER BY p.iso_week DESC
+      `;
+
+      const weeklyPerformance = await new Promise<any[]>((resolve, reject) => {
+        db.all(performanceQuery, [opportunity.accountId], (err, rows: any[]) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(rows || []);
+        });
+      });
+
+      if (weeklyPerformance.length >= 4) {
+        // Calculate projected annual revenue using same logic as net revenue tab
+        const vertical = opportunity.benchmark_vertical || 'Total ex. Swimwear';
+        const seasonalityCurve = vertical === 'Swimwear' ? 'Swimwear' : 'Total ex. Swimwear';
+
+        const recentWeeks = weeklyPerformance.map(week => {
+          const expectedWeeklyOrders = seasonalityMap[seasonalityCurve] && seasonalityMap[seasonalityCurve][week.iso_week]
+            ? opportunity.annual_order_volume * (seasonalityMap[seasonalityCurve][week.iso_week] / 100)
+            : opportunity.annual_order_volume / 52;
+
+          return {
+            actual_weekly_orders: week.actual_weekly_orders || 0,
+            expected_weekly_orders: expectedWeeklyOrders,
+            weekly_adoption_rate: week.weekly_adoption_rate || 0
+          };
+        });
+
+        // Calculate performance ratio and projected volumes
+        const avgActualOrders = recentWeeks.reduce((sum, w) => sum + w.actual_weekly_orders, 0) / recentWeeks.length;
+        const avgExpectedOrders = recentWeeks.reduce((sum, w) => sum + w.expected_weekly_orders, 0) / recentWeeks.length;
+        const performanceRatio = avgExpectedOrders > 0 ? avgActualOrders / avgExpectedOrders : 1;
+        const projectedAnnualVolume = opportunity.annual_order_volume * performanceRatio;
+        const actualAdoptionRate = (recentWeeks.reduce((sum, w) => sum + w.weekly_adoption_rate, 0) / recentWeeks.length) * 100;
+
+        // Calculate projected annual revenue
+        const projectedRevenue = calculateActualRevenue({
+          pricingModel: opportunity.pricing_model,
+          expectedAnnualRevenue: opportunity.est_offset_net_revenue,
+          initial_offset_fee: opportunity.initial_offset_fee,
+          refund_handling_fee: opportunity.refund_handling_fee,
+          domestic_return_rate: opportunity.domestic_return_rate,
+          loop_share_percent: opportunity.loop_share_percent,
+          blended_avg_cost_per_return: opportunity.blended_avg_cost_per_return,
+          labels_paid_by: opportunity.labels_paid_by
+        }, {
+          projected_annual_volume: projectedAnnualVolume,
+          actual_adoption_rate: actualAdoptionRate
+        });
+
+        // Calculate ACV impacts
+        const originalNetAcv = opportunity.net_acv || 0;
+        const startingAcv = opportunity.company_acv_starting_value || 0;
+        const originalEndingAcv = opportunity.company_acv_ending_value || opportunity.est_offset_net_revenue || 0;
+        const projectedEndingAcv = projectedRevenue;
+        const projectedNetAcv = projectedEndingAcv - startingAcv;
+        const acvVariance = projectedNetAcv - originalNetAcv;
+        const acvVariancePercent = originalNetAcv !== 0 ? (acvVariance / Math.abs(originalNetAcv)) * 100 : 0;
+
+        merchantData.push({
+          accountId: opportunity.accountId,
+          merchantName: opportunity.account_name,
+          pricingModel: opportunity.pricing_model,
+          labelsPaidBy: opportunity.labels_paid_by,
+          originalNetAcv,
+          startingAcv,
+          originalEndingAcv,
+          projectedEndingAcv,
+          projectedNetAcv,
+          acvVariance,
+          acvVariancePercent,
+          daysLive: Math.round(opportunity.daysLive || 0)
+        });
+
+        totalOriginalNetAcv += originalNetAcv;
+        totalProjectedNetAcv += projectedNetAcv;
+      }
+    }
+
+    // Calculate summary statistics
+    const totalAcvVariance = totalProjectedNetAcv - totalOriginalNetAcv;
+    const avgAcvVariance = merchantData.length > 0 ? totalAcvVariance / merchantData.length : 0;
+
+    // Count merchants by variance categories
+    const varianceCounts = {
+      exceeding: merchantData.filter(m => m.acvVariancePercent > 10).length,
+      meeting: merchantData.filter(m => m.acvVariancePercent >= -10 && m.acvVariancePercent <= 10).length,
+      below: merchantData.filter(m => m.acvVariancePercent < -10 && m.acvVariancePercent >= -30).length,
+      significantlyBelow: merchantData.filter(m => m.acvVariancePercent < -30).length
+    };
+
+    res.json({
+      success: true,
+      summary: {
+        totalMerchants: merchantData.length,
+        totalOriginalNetAcv,
+        totalProjectedNetAcv,
+        totalAcvVariance,
+        avgAcvVariance,
+        varianceCounts
+      },
+      merchants: merchantData.sort((a, b) => a.acvVariance - b.acvVariance)
+    });
+
+  } catch (error) {
+    console.error('ACV impacts analysis error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate ACV impacts analysis'
     });
   } finally {
     db.close();
