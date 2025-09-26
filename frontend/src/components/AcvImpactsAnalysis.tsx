@@ -645,7 +645,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                 {stratifiedStats.groupStats.filter(group => group.dataType === 'sufficient').length > 0 && (
                   <>
                     <TableRow sx={{ backgroundColor: 'success.light', '& td': { fontWeight: 'bold', color: 'success.dark' } }}>
-                      <TableCell colSpan={7} align="center">
+                      <TableCell colSpan={7} align="left">
                         <Typography variant="subtitle2" fontWeight="bold">
                           SUFFICIENT DATA MERCHANTS (Updated Projections)
                         </Typography>
@@ -743,8 +743,8 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                 {/* Insufficient Data Groups */}
                 {stratifiedStats.groupStats.filter(group => group.dataType === 'insufficient').length > 0 && (
                   <>
-                    <TableRow sx={{ backgroundColor: 'warning.light', '& td': { fontWeight: 'bold', color: 'warning.dark' } }}>
-                      <TableCell colSpan={7} align="center">
+                    <TableRow sx={{ backgroundColor: 'grey.200', '& td': { fontWeight: 'bold', color: 'grey.700' } }}>
+                      <TableCell colSpan={7} align="left">
                         <Typography variant="subtitle2" fontWeight="bold">
                           INSUFFICIENT DATA MERCHANTS (Original Projections)
                         </Typography>
@@ -940,12 +940,19 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                       </Box>
                     </TableCell>
                     <TableCell align="center">
-                      <Chip
-                        label={formatPercent(row.acvVariancePercent)}
-                        color={getVarianceColor(row.acvVariancePercent)}
-                        size="small"
-                        icon={getVarianceIcon(row.acvVariancePercent) || undefined}
-                      />
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                        <Chip
+                          label={formatPercent(row.acvVariancePercent)}
+                          color={getVarianceColor(row.acvVariancePercent)}
+                          size="small"
+                          icon={getVarianceIcon(row.acvVariancePercent) || undefined}
+                        />
+                        {!row.hasSufficientData && Math.abs(row.acvVariancePercent) < 0.1 && (
+                          <Tooltip title="Variance is 0% due to insufficient performance data - using original projected values">
+                            <WarningIcon color="warning" fontSize="small" />
+                          </Tooltip>
+                        )}
+                      </Box>
                     </TableCell>
                   </TableRow>
                 ))}

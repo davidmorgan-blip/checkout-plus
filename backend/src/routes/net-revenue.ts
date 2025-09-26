@@ -658,7 +658,7 @@ router.get('/acv-impacts', async (req, res) => {
     const daysLiveFilter = req.query.daysLive as string;
     const search = req.query.search as string;
 
-    // Build query with filters
+    // Build query with filters - include ALL opportunities, even without actuals
     let opportunitiesQuery = `
       SELECT
         o.account_casesafe_id as accountId,
@@ -681,24 +681,21 @@ router.get('/acv-impacts', async (req, res) => {
         (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date)
          FROM performance_actuals p
          WHERE p.salesforce_account_id = o.account_casesafe_id
-         LIMIT 1) as daysLive
+         LIMIT 1) as daysLive,
+        (SELECT COUNT(*) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id) as hasActualsData
       FROM opportunities o
       WHERE o.checkout_enabled = 'Yes'
         AND o.net_acv IS NOT NULL
         AND o.net_acv != 0
-        AND EXISTS (
-          SELECT 1 FROM performance_actuals p
-          WHERE p.salesforce_account_id = o.account_casesafe_id
-        )
     `;
 
-    // Apply days live filter
+    // Apply days live filter (only apply to merchants with actuals data)
     if (daysLiveFilter && daysLiveFilter !== 'all') {
       if (daysLiveFilter === 'under30') {
-        opportunitiesQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
+        opportunitiesQuery += ` AND ((SELECT COUNT(*) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id) = 0 OR (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30)`;
       } else {
         const threshold = parseInt(daysLiveFilter);
-        opportunitiesQuery += ` AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+        opportunitiesQuery += ` AND ((SELECT COUNT(*) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id) = 0 OR (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold})`;
       }
     }
 
@@ -805,7 +802,7 @@ router.get('/acv-impacts', async (req, res) => {
       let hasSufficientData: boolean;
 
       // Determine if we have sufficient data for projection
-      if (weeklyPerformance.length >= 4 || opportunity.pricing_model === 'Flat') {
+      if ((opportunity.hasActualsData > 0 && weeklyPerformance.length >= 4) || opportunity.pricing_model === 'Flat') {
         hasSufficientData = true;
         // Calculate projected annual revenue using performance data
         projectedRevenue = calculateActualRevenue({
@@ -823,7 +820,7 @@ router.get('/acv-impacts', async (req, res) => {
         });
       } else {
         hasSufficientData = false;
-        // Use original projected revenue for insufficient data
+        // Use original projected revenue for insufficient data (including no actuals data)
         projectedRevenue = opportunity.est_offset_net_revenue || 0;
       }
 
