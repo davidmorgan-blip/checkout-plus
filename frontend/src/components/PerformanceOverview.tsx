@@ -21,6 +21,8 @@ import {
   TableRow,
   IconButton,
   Tooltip,
+  TextField,
+  Autocomplete,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -122,6 +124,7 @@ export default function PerformanceOverview() {
   const [daysLiveFilter, setDaysLiveFilter] = useState('all');
   const [performanceTierFilter, setPerformanceTierFilter] = useState('all');
   const [error, setError] = useState<string | null>(null);
+  const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
 
   const fetchOverviewData = async () => {
     try {
@@ -153,7 +156,9 @@ export default function PerformanceOverview() {
       if (performanceTierFilter !== 'all') {
         params.append('tier', performanceTierFilter);
       }
-      params.append('limit', '20');
+      if (merchantFilter) {
+        params.append('merchant', merchantFilter);
+      }
 
       const response = await fetch(`http://localhost:3001/api/analytics/merchants?${params}`);
       const result = await response.json();
@@ -178,7 +183,19 @@ export default function PerformanceOverview() {
     };
 
     fetchData();
-  }, [daysLiveFilter, performanceTierFilter]);
+  }, [daysLiveFilter, performanceTierFilter, merchantFilter]);
+
+  // Get unique merchant names for autocomplete
+  const getMerchantOptions = () => {
+    if (!merchantData) return [];
+    const merchantNames = merchantData.map(m => m.merchant_name).filter(Boolean);
+    return Array.from(new Set(merchantNames)).sort();
+  };
+
+  // Since filtering is now done server-side, just return the merchant data
+  const getFilteredMerchantData = () => {
+    return merchantData || [];
+  };
 
   const getPerformanceTierColor = (tier: string) => {
     switch (tier) {
@@ -198,6 +215,18 @@ export default function PerformanceOverview() {
       case 'significantly_below': return 'Significantly Below';
       default: return tier;
     }
+  };
+
+  const handleDaysLiveFilterChange = (value: string) => {
+    setDaysLiveFilter(value);
+  };
+
+  const handlePerformanceTierFilterChange = (value: string) => {
+    setPerformanceTierFilter(value);
+  };
+
+  const handleMerchantFilterChange = (value: string | null) => {
+    setMerchantFilter(value);
   };
 
   if (loading) {
@@ -232,13 +261,13 @@ export default function PerformanceOverview() {
       </Typography>
 
       {/* Filter Controls */}
-      <Box sx={{ mb: 3 }}>
+      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>Days Live Filter</InputLabel>
           <Select
             value={daysLiveFilter}
             label="Days Live Filter"
-            onChange={(e) => setDaysLiveFilter(e.target.value)}
+            onChange={(e) => handleDaysLiveFilterChange(e.target.value)}
           >
             <MenuItem value="all">All Merchants</MenuItem>
             <MenuItem value="30">&gt; 30 Days Live</MenuItem>
@@ -246,6 +275,23 @@ export default function PerformanceOverview() {
             <MenuItem value="90">&gt; 90 Days Live</MenuItem>
           </Select>
         </FormControl>
+        <Autocomplete
+          size="small"
+          sx={{ minWidth: 250 }}
+          options={getMerchantOptions()}
+          value={merchantFilter}
+          onChange={(event, newValue) => handleMerchantFilterChange(newValue)}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Filter by Merchant"
+              placeholder="Search merchants..."
+            />
+          )}
+          clearOnBlur={false}
+          clearOnEscape
+          freeSolo={false}
+        />
       </Box>
 
       {/* Summary Metrics */}
@@ -316,35 +362,35 @@ export default function PerformanceOverview() {
             label={`All: ${overviewData.metrics.totalMerchants}`}
             color="primary"
             variant={performanceTierFilter === 'all' ? 'filled' : 'outlined'}
-            onClick={() => setPerformanceTierFilter('all')}
+            onClick={() => handlePerformanceTierFilterChange('all')}
             clickable
           />
           <Chip
             label={`Exceeding: ${overviewData.performanceTiers.exceeding}`}
             color="success"
             variant={performanceTierFilter === 'exceeding' ? 'filled' : 'outlined'}
-            onClick={() => setPerformanceTierFilter('exceeding')}
+            onClick={() => handlePerformanceTierFilterChange('exceeding')}
             clickable
           />
           <Chip
             label={`Meeting: ${overviewData.performanceTiers.meeting}`}
             color="info"
             variant={performanceTierFilter === 'meeting' ? 'filled' : 'outlined'}
-            onClick={() => setPerformanceTierFilter('meeting')}
+            onClick={() => handlePerformanceTierFilterChange('meeting')}
             clickable
           />
           <Chip
             label={`Slightly Below: ${overviewData.performanceTiers.slightlyBelow}`}
             color="warning"
             variant={performanceTierFilter === 'slightly_below' ? 'filled' : 'outlined'}
-            onClick={() => setPerformanceTierFilter('slightly_below')}
+            onClick={() => handlePerformanceTierFilterChange('slightly_below')}
             clickable
           />
           <Chip
             label={`Significantly Below: ${overviewData.performanceTiers.significantlyBelow}`}
             color="error"
             variant={performanceTierFilter === 'significantly_below' ? 'filled' : 'outlined'}
-            onClick={() => setPerformanceTierFilter('significantly_below')}
+            onClick={() => handlePerformanceTierFilterChange('significantly_below')}
             clickable
           />
         </Box>
@@ -353,7 +399,7 @@ export default function PerformanceOverview() {
       {/* Top Merchants Table */}
       <Paper sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom>
-          Merchant Performance {performanceTierFilter !== 'all' ? `(${getPerformanceTierLabel(performanceTierFilter)} - Top 20)` : '(Top 20)'}
+          Merchant Performance {performanceTierFilter !== 'all' ? `(${getPerformanceTierLabel(performanceTierFilter)})` : ''}
         </Typography>
         <TableContainer>
           <Table>
@@ -374,7 +420,7 @@ export default function PerformanceOverview() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {merchantData.map((merchant) => (
+              {getFilteredMerchantData().map((merchant) => (
                 <TableRow
                   key={merchant.salesforce_account_id}
                   sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
@@ -495,6 +541,7 @@ export default function PerformanceOverview() {
             </TableBody>
           </Table>
         </TableContainer>
+
 
         {merchantData.length === 0 && (
           <Box textAlign="center" py={4}>

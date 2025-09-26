@@ -20,6 +20,8 @@ import {
   Chip,
   IconButton,
   Tooltip,
+  TextField,
+  Autocomplete,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -121,6 +123,8 @@ export default function VolumeAnalysis() {
   const [loading, setLoading] = useState(true);
   const [daysLiveFilter, setDaysLiveFilter] = useState('all');
   const [error, setError] = useState<string | null>(null);
+  const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
+  const [forecastTierFilter, setForecastTierFilter] = useState('all');
 
   const fetchVolumeData = async () => {
     try {
@@ -153,6 +157,45 @@ export default function VolumeAnalysis() {
 
     fetchData();
   }, [daysLiveFilter]);
+
+  // Get unique merchant names for autocomplete
+  const getMerchantOptions = () => {
+    if (!volumeData) return [];
+    const merchantNames = volumeData.forecasts.map(f => f.merchant_name).filter(Boolean);
+    return Array.from(new Set(merchantNames)).sort();
+  };
+
+  // Calculate forecast performance tier based on forecast vs expected volume
+  const getForecastPerformanceTier = (forecast: ForecastData): string => {
+    if (!forecast.forecast_12month_orders || forecast.annual_order_volume === 0) return 'unknown';
+
+    const variancePercent = ((forecast.forecast_12month_orders - forecast.annual_order_volume) / forecast.annual_order_volume) * 100;
+
+    if (variancePercent > 10) return 'exceeding';
+    if (variancePercent >= -10) return 'meeting';
+    if (variancePercent >= -20) return 'below';
+    return 'significantly_below';
+  };
+
+  // Get forecast tier counts
+  const getForecastTierCounts = () => {
+    if (!volumeData) return { all: 0, exceeding: 0, meeting: 0, below: 0, significantly_below: 0 };
+
+    const merchantData = getMerchantWeeklyData();
+    const merchantsInWeeklyData = new Set(merchantData.map(m => m.merchant_name));
+    const validForecasts = volumeData.forecasts.filter(forecast =>
+      forecast.forecast_12month_orders !== null &&
+      merchantsInWeeklyData.has(forecast.merchant_name)
+    );
+
+    return {
+      all: validForecasts.length,
+      exceeding: validForecasts.filter(f => getForecastPerformanceTier(f) === 'exceeding').length,
+      meeting: validForecasts.filter(f => getForecastPerformanceTier(f) === 'meeting').length,
+      below: validForecasts.filter(f => getForecastPerformanceTier(f) === 'below').length,
+      significantly_below: validForecasts.filter(f => getForecastPerformanceTier(f) === 'significantly_below').length
+    };
+  };
 
   // Get the most recent 6 weeks for table headers
   const getRecentWeeks = () => {
@@ -204,8 +247,15 @@ export default function VolumeAnalysis() {
       merchant.trailing6WeekTotal += trend.actual_weekly_orders;
     });
 
-    // Convert to array and sort by most recent week's volume (descending)
-    const merchantArray = Array.from(merchantMap.values());
+    // Convert to array and filter by merchant if needed
+    let merchantArray = Array.from(merchantMap.values());
+
+    // Apply merchant filter
+    if (merchantFilter) {
+      merchantArray = merchantArray.filter(merchant => merchant.merchant_name === merchantFilter);
+    }
+
+    // Sort by most recent week's volume (descending)
     const mostRecentWeek = Math.max(...recentWeeks);
     return merchantArray.sort((a, b) => {
       const aRecentVolume = a.weeks.get(mostRecentWeek)?.actual || 0;
@@ -249,7 +299,7 @@ export default function VolumeAnalysis() {
       </Typography>
 
       {/* Filter Controls */}
-      <Box sx={{ mb: 3 }}>
+      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>Days Live Filter</InputLabel>
           <Select
@@ -263,6 +313,23 @@ export default function VolumeAnalysis() {
             <MenuItem value="90">&gt; 90 Days Live</MenuItem>
           </Select>
         </FormControl>
+        <Autocomplete
+          size="small"
+          sx={{ minWidth: 250 }}
+          options={getMerchantOptions()}
+          value={merchantFilter}
+          onChange={(event, newValue) => setMerchantFilter(newValue)}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Filter by Merchant"
+              placeholder="Search merchants..."
+            />
+          )}
+          clearOnBlur={false}
+          clearOnEscape
+          freeSolo={false}
+        />
       </Box>
 
       {/* Summary Metrics */}
@@ -488,6 +555,54 @@ export default function VolumeAnalysis() {
         <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
           Based on trailing 4-week performance adjusted for seasonal patterns
         </Typography>
+
+        {/* Forecast Performance Filter Chips */}
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Volume Forecast Performance Filter
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Chip
+              label={`All: ${getForecastTierCounts().all}`}
+              color="primary"
+              variant={forecastTierFilter === 'all' ? 'filled' : 'outlined'}
+              onClick={() => setForecastTierFilter('all')}
+              clickable
+            />
+            <Chip
+              label={`Exceeding: ${getForecastTierCounts().exceeding}`}
+              color="success"
+              variant={forecastTierFilter === 'exceeding' ? 'filled' : 'outlined'}
+              onClick={() => setForecastTierFilter('exceeding')}
+              clickable
+            />
+            <Chip
+              label={`Meeting: ${getForecastTierCounts().meeting}`}
+              color="info"
+              variant={forecastTierFilter === 'meeting' ? 'filled' : 'outlined'}
+              onClick={() => setForecastTierFilter('meeting')}
+              clickable
+            />
+            <Chip
+              label={`Below: ${getForecastTierCounts().below}`}
+              color="warning"
+              variant={forecastTierFilter === 'below' ? 'filled' : 'outlined'}
+              onClick={() => setForecastTierFilter('below')}
+              clickable
+            />
+            <Chip
+              label={`Significantly Below: ${getForecastTierCounts().significantly_below}`}
+              color="error"
+              variant={forecastTierFilter === 'significantly_below' ? 'filled' : 'outlined'}
+              onClick={() => setForecastTierFilter('significantly_below')}
+              clickable
+            />
+          </Box>
+          <Typography variant="caption" color="textSecondary" sx={{ mt: 2, display: 'block' }}>
+            Exceeding: &gt;10% above expected • Meeting: ±10% of expected • Below: 10-20% under • Significantly Below: &gt;20% under
+          </Typography>
+        </Paper>
+
         <TableContainer>
           <Table size="small">
             <TableHead>
@@ -506,10 +621,23 @@ export default function VolumeAnalysis() {
               {(() => {
                 const merchantData = getMerchantWeeklyData();
                 const merchantsInWeeklyData = new Set(merchantData.map(m => m.merchant_name));
-                const filteredForecasts = volumeData.forecasts.filter(forecast =>
-                  forecast.forecast_12month_orders !== null &&
-                  merchantsInWeeklyData.has(forecast.merchant_name)
-                );
+                const filteredForecasts = volumeData.forecasts.filter(forecast => {
+                  const hasValidForecast = forecast.forecast_12month_orders !== null && merchantsInWeeklyData.has(forecast.merchant_name);
+                  if (!hasValidForecast) return false;
+
+                  // Apply merchant filter
+                  if (merchantFilter) {
+                    return forecast.merchant_name === merchantFilter;
+                  }
+
+                  // Apply forecast tier filter
+                  if (forecastTierFilter !== 'all') {
+                    const tier = getForecastPerformanceTier(forecast);
+                    return tier === forecastTierFilter;
+                  }
+
+                  return true;
+                });
                 const merchantCount = filteredForecasts.length;
 
                 // Calculate totals

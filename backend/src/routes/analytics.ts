@@ -8,6 +8,9 @@ const dbPath = path.join(__dirname, '../../checkout_plus.db');
 interface PerformanceMetrics {
   totalMerchants: number;
   activeMerchants: number;
+  totalOpportunities: number;
+  opportunitiesWithActuals: number;
+  opportunitiesWithoutActuals: number;
   avgAdoptionRate: number;
   avgEligibilityRate: number;
   avgAttachRate: number;
@@ -140,9 +143,36 @@ router.get('/overview', async (req, res) => {
       });
     });
 
+    // Get opportunities count breakdown
+    const opportunitiesCount = await new Promise<{total: number, withActuals: number}>((resolve, reject) => {
+      db.get(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN pa.salesforce_account_id IS NOT NULL THEN 1 ELSE 0 END) as with_actuals
+        FROM opportunities o
+        LEFT JOIN (
+          SELECT DISTINCT salesforce_account_id
+          FROM performance_actuals
+          WHERE salesforce_account_id IS NOT NULL
+        ) pa ON o.account_casesafe_id = pa.salesforce_account_id
+      `, [], (err: Error | null, row: any) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve({
+          total: row?.total || 0,
+          withActuals: row?.with_actuals || 0
+        });
+      });
+    });
+
     const metrics: PerformanceMetrics = {
       totalMerchants: merchantData.length,
       activeMerchants: merchantData.filter((m: any) => m.days_live >= 7).length,
+      totalOpportunities: opportunitiesCount.total,
+      opportunitiesWithActuals: opportunitiesCount.withActuals,
+      opportunitiesWithoutActuals: opportunitiesCount.total - opportunitiesCount.withActuals,
       avgAdoptionRate: totalEcommOrders > 0 ? totalAcceptedOffers / totalEcommOrders : 0,
       avgEligibilityRate: totalEcommOrders > 0 ? totalOfferShown / totalEcommOrders : 0,
       avgAttachRate: totalOfferShown > 0 ? totalAcceptedOffers / totalOfferShown : 0,
@@ -191,6 +221,7 @@ router.get('/merchants', async (req, res) => {
   try {
     const daysLiveFilter = req.query.daysLive as string || 'all';
     const performanceTier = req.query.tier as string || 'all';
+    const merchantFilter = req.query.merchant as string || '';
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;
 
@@ -294,6 +325,11 @@ router.get('/merchants', async (req, res) => {
       const threshold = parseInt(daysLiveFilter);
       baseQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
       params.push(threshold);
+    }
+
+    if (merchantFilter) {
+      baseQuery += ` AND o.account_name = ?`;
+      params.push(merchantFilter);
     }
 
     baseQuery += ` ORDER BY trailing_4week_ecom_orders DESC`;

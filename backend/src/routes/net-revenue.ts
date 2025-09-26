@@ -7,6 +7,7 @@ const dbPath = path.join(__dirname, '../../checkout_plus.db');
 
 interface NetRevenueData {
   accountId: string;
+  opportunityId: string;
   accountName: string;
   pricingModel: string;
   labelsPaidBy: string;
@@ -122,6 +123,7 @@ router.get('/net-revenue', async (req, res) => {
     let opportunitiesQuery = `
       SELECT
         o.account_casesafe_id as accountId,
+        o.opportunity_id as opportunityId,
         o.account_name as accountName,
         o.pricing_model as pricingModel,
         o.est_offset_net_revenue as expectedAnnualRevenue,
@@ -326,6 +328,7 @@ router.get('/net-revenue', async (req, res) => {
 
       netRevenueData.push({
         accountId: opportunity.accountId,
+        opportunityId: opportunity.opportunityId,
         accountName: opportunity.accountName,
         pricingModel: opportunity.pricingModel,
         labelsPaidBy: opportunity.labels_paid_by,
@@ -377,7 +380,7 @@ router.get('/net-revenue/export', async (req, res) => {
     let opportunitiesQuery = `
       SELECT
         o.account_casesafe_id as accountId,
-        o.opportunity_id,
+        o.opportunity_id as opportunityId,
         o.account_name as accountName,
         o.pricing_model as pricingModel,
         o.est_offset_net_revenue as expectedAnnualRevenue,
