@@ -9,6 +9,7 @@ interface NetRevenueData {
   accountId: string;
   opportunityId: string;
   accountName: string;
+  closeDate: string;
   pricingModel: string;
   labelsPaidBy: string;
   expectedAnnualRevenue: number;
@@ -132,6 +133,7 @@ router.get('/net-revenue', async (req, res) => {
         o.account_casesafe_id as accountId,
         o.opportunity_id as opportunityId,
         o.account_name as accountName,
+        o.close_date as closeDate,
         o.pricing_model as pricingModel,
         o.est_offset_net_revenue as expectedAnnualRevenue,
         o.annual_order_volume,
@@ -327,6 +329,7 @@ router.get('/net-revenue', async (req, res) => {
         accountId: opportunity.accountId,
         opportunityId: opportunity.opportunityId,
         accountName: opportunity.accountName,
+        closeDate: opportunity.closeDate,
         pricingModel: opportunity.pricingModel,
         labelsPaidBy: opportunity.labels_paid_by,
         expectedAnnualRevenue: Math.round(expectedRevenue),
@@ -380,6 +383,7 @@ router.get('/net-revenue/export', async (req, res) => {
         o.account_casesafe_id as accountId,
         o.opportunity_id as opportunityId,
         o.account_name as accountName,
+        o.close_date as closeDate,
         o.pricing_model as pricingModel,
         o.est_offset_net_revenue as expectedAnnualRevenue,
         o.annual_order_volume,
@@ -544,6 +548,7 @@ router.get('/net-revenue/export', async (req, res) => {
       const merchantData: any = {
         'SFDC Account ID': opportunity.accountId,
         'SFDC Opportunity ID': opportunity.opportunityId || '',
+        'Opportunity Close Date': opportunity.closeDate || '',
         'Merchant Name': opportunity.accountName,
         'Original 12 Month Order Volume': opportunity.annual_order_volume,
         'Original Adoption Rate': ((opportunity.adoption_rate || 50) / 100).toFixed(2)
@@ -607,6 +612,7 @@ router.get('/net-revenue/export', async (req, res) => {
       headers = [
         'SFDC Account ID',
         'SFDC Opportunity ID',
+        'Opportunity Close Date',
         'Merchant Name',
         'Original 12 Month Order Volume',
         'Original Adoption Rate',

@@ -39,6 +39,7 @@ interface NetRevenueData {
   accountId: string;
   opportunityId: string;
   accountName: string;
+  closeDate: string;
   pricingModel: string;
   labelsPaidBy: string;
   expectedAnnualRevenue: number;
