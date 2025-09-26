@@ -20,6 +20,7 @@ export interface OpportunityData {
   blendedAvgCostPerReturn: number;
   domesticReturnRate: number;
   adoptionRate: number;
+  opportunityRecordType: string;
   implementationStatus: string;
   netAcv: number;
   companyAcvStartingValue: number;
@@ -76,6 +77,7 @@ export class DataProcessorAgent {
     'Opportunity: Blended avg cost per return': Joi.number().allow('', null),
     'Opportunity: Domestic Return Rate %': Joi.number().allow('', null),
     'Opportunity: Adoption Rate': Joi.number().allow('', null),
+    'Opportunity: Opportunity Record Type': Joi.string().allow('', null),
     'Implementation Status': Joi.string().allow('', null),
     'Opportunity: Net ACV': Joi.number().allow('', null),
     'Opportunity: Company ACV - Starting Value': Joi.number().allow('', null),
@@ -141,6 +143,7 @@ export class DataProcessorAgent {
             blendedAvgCostPerReturn: parseFloat(row['Opportunity: Blended avg cost per return']) || 0,
             domesticReturnRate: parseFloat(row['Opportunity: Domestic Return Rate %']) || 0,
             adoptionRate: parseFloat(row['Opportunity: Adoption Rate']) || 50,
+            opportunityRecordType: row['Opportunity: Opportunity Record Type'] || '',
             implementationStatus: row['Implementation Status'] || '',
             netAcv: parseFloat(row['Opportunity: Net ACV']) || 0,
             companyAcvStartingValue: parseFloat(row['Opportunity: Company ACV - Starting Value']) || 0,
@@ -292,9 +295,9 @@ export class DataProcessorAgent {
           close_date, contract_effective_date, checkout_enabled, pricing_model,
           labels_paid_by, loop_share_percent, est_offset_net_revenue, initial_offset_fee,
           refund_handling_fee, annual_order_volume, blended_avg_cost_per_return,
-          domestic_return_rate, adoption_rate, implementation_status, net_acv,
+          domestic_return_rate, adoption_rate, opportunity_record_type, implementation_status, net_acv,
           company_acv_starting_value, company_acv_ending_value, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `;
 
       for (const opp of filteredOpportunities) {
@@ -303,7 +306,7 @@ export class DataProcessorAgent {
           opp.closeDate, opp.contractEffectiveDate, opp.checkoutEnabled, opp.pricingModel,
           opp.labelsPaidBy, opp.loopSharePercent, opp.estOffsetNetRevenue, opp.initialOffsetFee,
           opp.refundHandlingFee, opp.annualOrderVolume, opp.blendedAvgCostPerReturn,
-          opp.domesticReturnRate, opp.adoptionRate, opp.implementationStatus, opp.netAcv,
+          opp.domesticReturnRate, opp.adoptionRate, opp.opportunityRecordType, opp.implementationStatus, opp.netAcv,
           opp.companyAcvStartingValue, opp.companyAcvEndingValue
         ]);
       }

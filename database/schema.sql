@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS opportunities (
   blended_avg_cost_per_return REAL, -- Opportunity: Blended avg cost per return
   domestic_return_rate REAL, -- Opportunity: Domestic Return Rate %
   adoption_rate REAL, -- Opportunity: Adoption Rate
+  opportunity_record_type TEXT, -- Opportunity: Opportunity Record Type
   implementation_status TEXT, -- Implementation Status
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
