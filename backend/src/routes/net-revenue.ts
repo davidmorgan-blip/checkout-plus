@@ -829,7 +829,12 @@ router.get('/acv-impacts', async (req, res) => {
       const startingAcv = opportunity.company_acv_starting_value || 0;
       const originalEndingAcv = opportunity.company_acv_ending_value || opportunity.est_offset_net_revenue || 0;
       const projectedEndingAcv = projectedRevenue;
-      const projectedNetAcv = projectedEndingAcv - startingAcv;
+
+      // For insufficient data merchants, ensure projected net ACV equals original net ACV (zero variance)
+      const projectedNetAcv = hasSufficientData ?
+        (projectedEndingAcv - startingAcv) :
+        originalNetAcv;
+
       const acvVariance = projectedNetAcv - originalNetAcv;
       const acvVariancePercent = originalNetAcv !== 0 ? (acvVariance / Math.abs(originalNetAcv)) * 100 : 0;
 

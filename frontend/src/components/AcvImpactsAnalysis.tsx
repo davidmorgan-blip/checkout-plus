@@ -25,13 +25,16 @@ import {
   Checkbox,
   Link,
   FormControlLabel,
-  Switch
+  Switch,
+  Button
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import WarningIcon from '@mui/icons-material/Warning';
+import DownloadIcon from '@mui/icons-material/Download';
+import * as XLSX from 'xlsx';
 
 interface AcvImpactData {
   accountId: string;
@@ -144,6 +147,203 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     if (variancePercent > 0) return <TrendingUpIcon fontSize="small" />;
     if (variancePercent < 0) return <TrendingDownIcon fontSize="small" />;
     return null;
+  };
+
+  // Export functions
+  const exportMerchantDataToCsv = () => {
+    // Use the filtered data that's currently displayed
+    const dataToExport = filteredData;
+
+    // Create CSV headers
+    const headers = [
+      'Merchant Name',
+      'Pricing Model',
+      'Labels Paid By',
+      'Days Live',
+      'Original Net ACV',
+      'Starting ACV',
+      'Original Ending ACV',
+      'Projected Ending ACV',
+      'Projected Net ACV',
+      'ACV Variance ($)',
+      'ACV Variance (%)',
+      'Has Sufficient Data'
+    ];
+
+    // Create CSV rows
+    const csvRows = [
+      headers.join(','),
+      ...dataToExport.map(row => [
+        `"${row.merchantName}"`,
+        row.pricingModel,
+        `"${row.labelsPaidBy}"`,
+        row.daysLive,
+        row.originalNetAcv,
+        row.startingAcv,
+        row.originalEndingAcv,
+        row.projectedEndingAcv,
+        row.projectedNetAcv,
+        row.acvVariance,
+        row.acvVariancePercent.toFixed(1),
+        row.hasSufficientData ? 'Yes' : 'No'
+      ].join(','))
+    ];
+
+    // Create and download CSV file
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', `acv-impacts-merchant-data-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportSummaryTableToXlsx = () => {
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+
+    // Prepare summary data for export
+    const summaryData = [];
+
+    // Add header row
+    summaryData.push([
+      'Category',
+      'Labels Paid By',
+      'Pricing Model',
+      'Merchant Count',
+      'Original Net ACV',
+      'Projected Net ACV',
+      'ACV Variance ($)',
+      'ACV Variance (%)'
+    ]);
+
+    // Add sufficient data section header
+    if (stratifiedStats.groupStats.filter(group => group.dataType === 'sufficient').length > 0) {
+      summaryData.push(['SUFFICIENT DATA MERCHANTS (Updated Projections)', '', '', '', '', '', '', '']);
+
+      // Add sufficient data groups
+      stratifiedStats.groupStats
+        .filter(group => group.dataType === 'sufficient')
+        .forEach(group => {
+          const variancePercent = group.totalOriginalNetAcv !== 0
+            ? (group.totalAcvVariance / group.totalOriginalNetAcv) * 100
+            : 0;
+
+          summaryData.push([
+            'Group',
+            group.labelsPaidBy,
+            group.pricingModel,
+            group.merchantCount,
+            group.totalOriginalNetAcv,
+            group.totalProjectedNetAcv,
+            group.totalAcvVariance,
+            variancePercent.toFixed(1)
+          ]);
+        });
+
+      // Add sufficient data subtotal
+      const sufficientVariancePercent = stratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0
+        ? (stratifiedStats.sufficientTotals.totalAcvVariance / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100
+        : 0;
+
+      summaryData.push([
+        'SUFFICIENT DATA SUBTOTAL',
+        '',
+        '',
+        stratifiedStats.sufficientTotals.merchantCount,
+        stratifiedStats.sufficientTotals.totalOriginalNetAcv,
+        stratifiedStats.sufficientTotals.totalProjectedNetAcv,
+        stratifiedStats.sufficientTotals.totalAcvVariance,
+        sufficientVariancePercent.toFixed(1)
+      ]);
+    }
+
+    // Add insufficient data section header
+    if (stratifiedStats.groupStats.filter(group => group.dataType === 'insufficient').length > 0) {
+      summaryData.push(['INSUFFICIENT DATA MERCHANTS (Original Projections)', '', '', '', '', '', '', '']);
+
+      // Add insufficient data groups
+      stratifiedStats.groupStats
+        .filter(group => group.dataType === 'insufficient')
+        .forEach(group => {
+          const variancePercent = group.totalOriginalNetAcv !== 0
+            ? (group.totalAcvVariance / group.totalOriginalNetAcv) * 100
+            : 0;
+
+          summaryData.push([
+            'Group',
+            group.labelsPaidBy,
+            group.pricingModel,
+            group.merchantCount,
+            group.totalOriginalNetAcv,
+            group.totalProjectedNetAcv,
+            group.totalAcvVariance,
+            variancePercent.toFixed(1)
+          ]);
+        });
+
+      // Add insufficient data subtotal
+      const insufficientVariancePercent = stratifiedStats.insufficientTotals.totalOriginalNetAcv !== 0
+        ? (stratifiedStats.insufficientTotals.totalAcvVariance / stratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100
+        : 0;
+
+      summaryData.push([
+        'INSUFFICIENT DATA SUBTOTAL',
+        '',
+        '',
+        stratifiedStats.insufficientTotals.merchantCount,
+        stratifiedStats.insufficientTotals.totalOriginalNetAcv,
+        stratifiedStats.insufficientTotals.totalProjectedNetAcv,
+        stratifiedStats.insufficientTotals.totalAcvVariance,
+        insufficientVariancePercent.toFixed(1)
+      ]);
+    }
+
+    // Add grand total if we have data
+    if (displaySummary && (stratifiedStats.sufficientTotals.merchantCount > 0 || stratifiedStats.insufficientTotals.merchantCount > 0)) {
+      const grandTotalVariancePercent = displaySummary.totalOriginalNetAcv !== 0
+        ? (displaySummary.totalAcvVariance / displaySummary.totalOriginalNetAcv) * 100
+        : 0;
+
+      summaryData.push([
+        'GRAND TOTAL',
+        '',
+        '',
+        displaySummary.totalMerchants,
+        displaySummary.totalOriginalNetAcv,
+        displaySummary.totalProjectedNetAcv,
+        displaySummary.totalAcvVariance,
+        grandTotalVariancePercent.toFixed(1)
+      ]);
+    }
+
+    // Create worksheet
+    const ws = XLSX.utils.aoa_to_sheet(summaryData);
+
+    // Set column widths
+    const colWidths = [
+      { wch: 35 }, // Category
+      { wch: 15 }, // Labels Paid By
+      { wch: 15 }, // Pricing Model
+      { wch: 12 }, // Merchant Count
+      { wch: 15 }, // Original Net ACV
+      { wch: 15 }, // Projected Net ACV
+      { wch: 15 }, // ACV Variance ($)
+      { wch: 12 }  // ACV Variance (%)
+    ];
+    ws['!cols'] = colWidths;
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'ACV Variance Summary');
+
+    // Write and download file
+    XLSX.writeFile(wb, `acv-variance-summary-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const getVarianceTier = (variancePercent: number): string => {
@@ -419,15 +619,38 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h5" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <AttachMoneyIcon />
-        ACV Impacts Analysis
-        <Tooltip title="Shows the impact of projected revenue performance on Net ACV values">
-          <IconButton size="small">
-            <InfoIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <AttachMoneyIcon />
+          ACV Impacts Analysis
+          <Tooltip title="Shows the impact of projected revenue performance on Net ACV values">
+            <IconButton size="small">
+              <InfoIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Typography>
+
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={exportMerchantDataToCsv}
+            disabled={filteredData.length === 0}
+          >
+            Export Merchant Data (CSV)
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={exportSummaryTableToXlsx}
+            disabled={stratifiedStats.groupStats.length === 0}
+          >
+            Export Summary (XLSX)
+          </Button>
+        </Box>
+      </Box>
 
       {/* Summary Cards */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mb: 3 }}>
