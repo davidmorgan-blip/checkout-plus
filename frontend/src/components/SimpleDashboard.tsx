@@ -79,6 +79,7 @@ interface FileUploadState {
 
 export default function SimpleDashboard() {
   const [tabValue, setTabValue] = useState(0); // Start with Net Revenue tab (will fallback to Data Upload if disabled)
+  const [userSelectedTab, setUserSelectedTab] = useState(false); // Track if user manually selected a tab
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
     opportunities: 0,
     performanceRecords: 0,
@@ -156,14 +157,16 @@ export default function SimpleDashboard() {
 
   // Set default tab based on data loaded status
   useEffect(() => {
-    if (!dataLoaded && tabValue !== 3) {
-      // If no data and we're not on Data Upload tab, switch to Data Upload
-      setTabValue(3);
-    } else if (dataLoaded && tabValue === 3) {
-      // When data becomes available and we're on Data Upload tab, switch to Net Revenue
-      setTabValue(0);
+    if (!userSelectedTab) {
+      if (!dataLoaded && tabValue !== 3) {
+        // If no data and we're not on Data Upload tab, switch to Data Upload
+        setTabValue(3);
+      } else if (dataLoaded && tabValue === 3) {
+        // If data is loaded and we're on Data Upload tab, switch to Net Revenue
+        setTabValue(0);
+      }
     }
-  }, [dataLoaded, tabValue]);
+  }, [dataLoaded, tabValue, userSelectedTab]);
 
   // Fetch opportunities breakdown when data is loaded
   useEffect(() => {
@@ -174,6 +177,7 @@ export default function SimpleDashboard() {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
+    setUserSelectedTab(true); // Mark that user has manually selected a tab
   };
 
   const uploadFile = async (file: File, endpoint: string, setUploadState: React.Dispatch<React.SetStateAction<FileUploadState>>) => {
