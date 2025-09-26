@@ -95,8 +95,12 @@ router.get('/overview', async (req, res) => {
       `;
 
       if (daysLiveFilter !== 'all') {
-        const threshold = parseInt(daysLiveFilter);
-        query += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+        if (daysLiveFilter === 'under30') {
+          query += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
+        } else {
+          const threshold = parseInt(daysLiveFilter);
+          query += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+        }
       }
 
       db.all(query, (err, rows: any[]) => {
@@ -129,11 +133,11 @@ router.get('/overview', async (req, res) => {
       JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
       WHERE p.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
         AND p.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
-      ${daysLiveFilter !== 'all' ? 'AND (JULIANDAY(\'now\') - JULIANDAY(p.first_offer_date)) >= ?' : ''}
+      ${daysLiveFilter !== 'all' ? (daysLiveFilter === 'under30' ? 'AND (JULIANDAY(\'now\') - JULIANDAY(p.first_offer_date)) < ?' : 'AND (JULIANDAY(\'now\') - JULIANDAY(p.first_offer_date)) >= ?') : ''}
     `;
 
     const trailing4WeekData = await new Promise<any>((resolve, reject) => {
-      const trailing4WeekParams = daysLiveFilter !== 'all' ? [parseInt(daysLiveFilter)] : [];
+      const trailing4WeekParams = daysLiveFilter !== 'all' ? (daysLiveFilter === 'under30' ? [30] : [parseInt(daysLiveFilter)]) : [];
       db.get(trailing4WeekQuery, trailing4WeekParams, (err, row: any) => {
         if (err) {
           reject(err);
@@ -322,9 +326,14 @@ router.get('/merchants', async (req, res) => {
     const params: any[] = [];
 
     if (daysLiveFilter !== 'all') {
-      const threshold = parseInt(daysLiveFilter);
-      baseQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
-      params.push(threshold);
+      if (daysLiveFilter === 'under30') {
+        baseQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < ?`;
+        params.push(30);
+      } else {
+        const threshold = parseInt(daysLiveFilter);
+        baseQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
+        params.push(threshold);
+      }
     }
 
     if (merchantFilter) {
@@ -489,9 +498,14 @@ router.get('/volume', async (req, res) => {
 
     const params: any[] = [];
     if (daysLiveFilter !== 'all') {
-      const threshold = parseInt(daysLiveFilter);
-      weeklyTrendsQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
-      params.push(threshold);
+      if (daysLiveFilter === 'under30') {
+        weeklyTrendsQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) < ?`;
+        params.push(30);
+      } else {
+        const threshold = parseInt(daysLiveFilter);
+        weeklyTrendsQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ?`;
+        params.push(threshold);
+      }
     }
 
     weeklyTrendsQuery += ` ORDER BY merchant_name, p.iso_week`;

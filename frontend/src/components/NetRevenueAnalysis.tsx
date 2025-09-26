@@ -374,6 +374,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
               label="Days Live Filter"
             >
               <MenuItem value="all">All Merchants</MenuItem>
+              <MenuItem value="under30">&lt;30 Days Live</MenuItem>
               <MenuItem value="30">30+ Days Live</MenuItem>
               <MenuItem value="60">60+ Days Live</MenuItem>
               <MenuItem value="90">90+ Days Live</MenuItem>

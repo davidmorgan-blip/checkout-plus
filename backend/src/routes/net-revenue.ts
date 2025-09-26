@@ -147,8 +147,12 @@ router.get('/net-revenue', async (req, res) => {
 
     // Apply days live filter at SQL level for consistency with other tabs
     if (daysLiveFilter !== 'all') {
-      const threshold = parseInt(daysLiveFilter);
-      opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+      if (daysLiveFilter === 'under30') {
+        opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
+      } else {
+        const threshold = parseInt(daysLiveFilter);
+        opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+      }
     }
 
     const opportunities = await new Promise<any[]>((resolve, reject) => {
@@ -381,10 +385,14 @@ router.get('/net-revenue/export', async (req, res) => {
         AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
     `;
 
-    // Apply days live filter
+    // Apply days live filter at SQL level for consistency with other tabs
     if (daysLiveFilter !== 'all') {
-      const threshold = parseInt(daysLiveFilter);
-      opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+      if (daysLiveFilter === 'under30') {
+        opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) < 30`;
+      } else {
+        const threshold = parseInt(daysLiveFilter);
+        opportunitiesQuery += ` AND (SELECT JULIANDAY('now') - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) >= ${threshold}`;
+      }
     }
 
     const opportunities = await new Promise<any[]>((resolve, reject) => {
