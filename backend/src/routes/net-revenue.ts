@@ -60,8 +60,11 @@ function calculateExpectedRevenue(opportunity: any): number {
     ) * loopShareDecimal;
 
     if (labels_paid_by === 'Loop') {
-      const labelCosts = annual_order_volume * returnRateDecimal * (blended_avg_cost_per_return || 0);
-      return revenueFromFees - labelCosts;
+      // Label costs with 5pp buffer for adopted orders
+      const labelCostsAdopted = annual_order_volume * (returnRateDecimal + 0.05) * adoptionDecimal * (blended_avg_cost_per_return || 0);
+      const labelCostsNonAdopted = annual_order_volume * returnRateDecimal * (1 - adoptionDecimal) * (blended_avg_cost_per_return || 0);
+      const totalLabelCosts = labelCostsAdopted + labelCostsNonAdopted;
+      return revenueFromFees - totalLabelCosts;
     }
 
     return revenueFromFees;
@@ -102,8 +105,11 @@ function calculateActualRevenue(opportunity: any, actualMetrics: any): number {
     ) * loopShareDecimal;
 
     if (labels_paid_by === 'Loop') {
-      const labelCosts = projected_annual_volume * returnRateDecimal * (blended_avg_cost_per_return || 0);
-      return revenueFromFees - labelCosts;
+      // Label costs with 5pp buffer for adopted orders
+      const labelCostsAdopted = projected_annual_volume * (returnRateDecimal + 0.05) * adoptionDecimal * (blended_avg_cost_per_return || 0);
+      const labelCostsNonAdopted = projected_annual_volume * returnRateDecimal * (1 - adoptionDecimal) * (blended_avg_cost_per_return || 0);
+      const totalLabelCosts = labelCostsAdopted + labelCostsNonAdopted;
+      return revenueFromFees - totalLabelCosts;
     }
 
     return revenueFromFees;
