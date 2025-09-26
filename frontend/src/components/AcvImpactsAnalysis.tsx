@@ -1213,8 +1213,12 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                           color={getVarianceColor(row.acvVariancePercent)}
                           size="small"
                         />
-                        {!row.hasSufficientData && Math.abs(row.acvVariancePercent) < 0.1 && (
-                          <Tooltip title="Variance is 0% due to insufficient performance data - using original projected values">
+                        {row.pricingModel !== 'Flat' && row.daysLive > 28 && !row.hasSufficientData ? (
+                          <Tooltip title="Rev Share merchant live >4 weeks but insufficient performance data - may have stopped using service">
+                            <WarningIcon color="error" fontSize="small" />
+                          </Tooltip>
+                        ) : !row.hasSufficientData && Math.abs(row.acvVariancePercent - 100) < 0.1 && (
+                          <Tooltip title="Variance is 100% due to insufficient performance data - using original projected values">
                             <WarningIcon color="warning" fontSize="small" />
                           </Tooltip>
                         )}
