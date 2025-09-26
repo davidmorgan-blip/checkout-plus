@@ -34,10 +34,12 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import WarningIcon from '@mui/icons-material/Warning';
 import DownloadIcon from '@mui/icons-material/Download';
+import LaunchIcon from '@mui/icons-material/Launch';
 import * as XLSX from 'xlsx';
 
 interface AcvImpactData {
   accountId: string;
+  opportunityId: string;
   merchantName: string;
   pricingModel: string;
   labelsPaidBy: string;
@@ -85,6 +87,39 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   const [labelsPaidByFilter, setLabelsPaidByFilter] = useState('all');
   const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
   const [hideInsufficientData, setHideInsufficientData] = useState(false);
+
+  const renderMerchantWithLinks = (merchantName: string, accountId: string, opportunityId: string, pricingInfo?: string) => (
+    <Box>
+      <Box display="flex" alignItems="center" gap={0.5}>
+        <Typography variant="body2" fontWeight="medium">
+          {merchantName}
+        </Typography>
+        <Tooltip title="View SFDC Account">
+          <IconButton
+            size="small"
+            sx={{ padding: '2px' }}
+            onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Account/${accountId}/view`, '_blank')}
+          >
+            <LaunchIcon sx={{ fontSize: 12, color: 'primary.main' }} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="View SFDC Opportunity">
+          <IconButton
+            size="small"
+            sx={{ padding: '2px' }}
+            onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Opportunity/${opportunityId}/view`, '_blank')}
+          >
+            <LaunchIcon sx={{ fontSize: 12, color: 'secondary.main' }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
+      {pricingInfo && (
+        <Typography variant="caption" color="textSecondary">
+          {pricingInfo}
+        </Typography>
+      )}
+    </Box>
+  );
 
   const fetchAcvData = async () => {
     try {
@@ -157,11 +192,11 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     // Create CSV headers
     const headers = [
       'Merchant Name',
+      'Performance Tier',
       'Pricing Model',
       'Labels Paid By',
       'Days Live',
       'Original Net ACV',
-      'Starting ACV',
       'Original Ending ACV',
       'Projected Ending ACV',
       'Projected Net ACV',
@@ -173,20 +208,33 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     // Create CSV rows
     const csvRows = [
       headers.join(','),
-      ...dataToExport.map(row => [
-        `"${row.merchantName}"`,
-        row.pricingModel,
-        `"${row.labelsPaidBy}"`,
-        row.daysLive,
-        row.originalNetAcv,
-        row.startingAcv,
-        row.originalEndingAcv,
-        row.projectedEndingAcv,
-        row.projectedNetAcv,
-        row.acvVariance,
-        (row.acvVariancePercent / 100).toFixed(4),
-        row.hasSufficientData ? 'Yes' : 'No'
-      ].join(','))
+      ...dataToExport.map(row => {
+        const tier = getVarianceTier(row.acvVariancePercent);
+        let tierDisplay = '';
+        switch (tier) {
+          case 'exceeding100': tierDisplay = '>100%'; break;
+          case 'meeting80': tierDisplay = '80-100%'; break;
+          case 'below50': tierDisplay = '50-80%'; break;
+          case 'below30': tierDisplay = '30-50%'; break;
+          case 'significantlyBelow30': tierDisplay = '<30%'; break;
+          default: tierDisplay = 'N/A';
+        }
+
+        return [
+          `"${row.merchantName}"`,
+          tierDisplay,
+          row.pricingModel,
+          `"${row.labelsPaidBy}"`,
+          row.daysLive,
+          row.originalNetAcv,
+          row.originalEndingAcv,
+          row.projectedEndingAcv,
+          row.projectedNetAcv,
+          row.acvVariance,
+          (row.acvVariancePercent / 100).toFixed(4),
+          row.hasSufficientData ? 'Yes' : 'No'
+        ].join(',');
+      })
     ];
 
     // Create and download CSV file
@@ -205,14 +253,14 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   };
 
   const exportSummaryTableToXlsx = () => {
-    // Create workbook and worksheet
+    // Create workbook
     const wb = XLSX.utils.book_new();
 
-    // Prepare summary data for export
-    const summaryData = [];
+    // === SHEET 1: Pricing Model & Labels Summary ===
+    const pricingModelSummaryData = [];
 
     // Add header row
-    summaryData.push([
+    pricingModelSummaryData.push([
       'Category',
       'Labels Paid By',
       'Pricing Model',
@@ -225,7 +273,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
 
     // Add sufficient data section header
     if (stratifiedStats.groupStats.filter(group => group.dataType === 'sufficient').length > 0) {
-      summaryData.push(['SUFFICIENT DATA MERCHANTS (Updated Projections)', '', '', '', '', '', '', '']);
+      pricingModelSummaryData.push(['SUFFICIENT DATA MERCHANTS (Updated Projections)', '', '', '', '', '', '', '']);
 
       // Add sufficient data groups
       stratifiedStats.groupStats
@@ -235,7 +283,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
             ? (group.totalProjectedNetAcv / group.totalOriginalNetAcv) * 100
             : 0;
 
-          summaryData.push([
+          pricingModelSummaryData.push([
             'Group',
             group.labelsPaidBy,
             group.pricingModel,
@@ -252,7 +300,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         ? (stratifiedStats.sufficientTotals.totalProjectedNetAcv / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100
         : 0;
 
-      summaryData.push([
+      pricingModelSummaryData.push([
         'SUFFICIENT DATA SUBTOTAL',
         '',
         '',
@@ -266,7 +314,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
 
     // Add insufficient data section header
     if (stratifiedStats.groupStats.filter(group => group.dataType === 'insufficient').length > 0) {
-      summaryData.push(['INSUFFICIENT DATA MERCHANTS (Original Projections)', '', '', '', '', '', '', '']);
+      pricingModelSummaryData.push(['INSUFFICIENT DATA MERCHANTS (Original Projections)', '', '', '', '', '', '', '']);
 
       // Add insufficient data groups
       stratifiedStats.groupStats
@@ -276,7 +324,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
             ? (group.totalProjectedNetAcv / group.totalOriginalNetAcv) * 100
             : 0;
 
-          summaryData.push([
+          pricingModelSummaryData.push([
             'Group',
             group.labelsPaidBy,
             group.pricingModel,
@@ -293,7 +341,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         ? (stratifiedStats.insufficientTotals.totalProjectedNetAcv / stratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100
         : 0;
 
-      summaryData.push([
+      pricingModelSummaryData.push([
         'INSUFFICIENT DATA SUBTOTAL',
         '',
         '',
@@ -311,7 +359,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         ? (displaySummary.totalProjectedNetAcv / displaySummary.totalOriginalNetAcv) * 100
         : 0;
 
-      summaryData.push([
+      pricingModelSummaryData.push([
         'GRAND TOTAL',
         '',
         '',
@@ -323,11 +371,9 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       ]);
     }
 
-    // Create worksheet
-    const ws = XLSX.utils.aoa_to_sheet(summaryData);
-
-    // Set column widths
-    const colWidths = [
+    // Create first worksheet
+    const ws1 = XLSX.utils.aoa_to_sheet(pricingModelSummaryData);
+    const colWidths1 = [
       { wch: 35 }, // Category
       { wch: 15 }, // Labels Paid By
       { wch: 15 }, // Pricing Model
@@ -337,20 +383,111 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       { wch: 15 }, // ACV Variance ($)
       { wch: 12 }  // % of Original
     ];
-    ws['!cols'] = colWidths;
+    ws1['!cols'] = colWidths1;
+    XLSX.utils.book_append_sheet(wb, ws1, 'Pricing Model Summary');
 
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'ACV Variance Summary');
+    // === SHEET 2: Performance Tier Summary ===
+    const performanceTierSummaryData = [];
+
+    // Add header row
+    performanceTierSummaryData.push([
+      'Performance Tier',
+      'Merchant Count',
+      'Original Net ACV',
+      'Projected Net ACV',
+      'ACV Variance ($)',
+      '% of Original'
+    ]);
+
+    // Add tier data (only for merchants with sufficient data)
+    if (varianceStratifiedStats.tierStats.length > 0) {
+      const sufficientDataTiers = varianceStratifiedStats.tierStats.filter(tier => tier.tier !== 'insufficientData');
+
+      sufficientDataTiers.forEach(tier => {
+        const variancePercent = tier.totalOriginalNetAcv !== 0
+          ? (tier.totalProjectedNetAcv / tier.totalOriginalNetAcv) * 100
+          : 0;
+
+        performanceTierSummaryData.push([
+          tier.tierDisplay,
+          tier.merchantCount,
+          tier.totalOriginalNetAcv,
+          tier.totalProjectedNetAcv,
+          tier.totalAcvVariance,
+          (variancePercent / 100).toFixed(4)
+        ]);
+      });
+
+      // Add subtotal for sufficient data
+      const sufficientTotalVariancePercent = varianceStratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0
+        ? (varianceStratifiedStats.sufficientTotals.totalProjectedNetAcv / varianceStratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100
+        : 0;
+
+      performanceTierSummaryData.push([
+        'SUBTOTAL (Sufficient Data)',
+        varianceStratifiedStats.sufficientTotals.merchantCount,
+        varianceStratifiedStats.sufficientTotals.totalOriginalNetAcv,
+        varianceStratifiedStats.sufficientTotals.totalProjectedNetAcv,
+        varianceStratifiedStats.sufficientTotals.totalAcvVariance,
+        (sufficientTotalVariancePercent / 100).toFixed(4)
+      ]);
+
+      // Add insufficient data row if any exist
+      if (varianceStratifiedStats.insufficientTotals.merchantCount > 0) {
+        const insufficientTotalVariancePercent = varianceStratifiedStats.insufficientTotals.totalOriginalNetAcv !== 0
+          ? (varianceStratifiedStats.insufficientTotals.totalProjectedNetAcv / varianceStratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100
+          : 0;
+
+        performanceTierSummaryData.push([
+          'Insufficient Data',
+          varianceStratifiedStats.insufficientTotals.merchantCount,
+          varianceStratifiedStats.insufficientTotals.totalOriginalNetAcv,
+          varianceStratifiedStats.insufficientTotals.totalProjectedNetAcv,
+          varianceStratifiedStats.insufficientTotals.totalAcvVariance,
+          (insufficientTotalVariancePercent / 100).toFixed(4)
+        ]);
+      }
+
+      // Add grand total
+      const grandTotalVariancePercent = varianceStratifiedStats.totalOriginalNetAcv !== 0
+        ? (varianceStratifiedStats.totalProjectedNetAcv / varianceStratifiedStats.totalOriginalNetAcv) * 100
+        : 0;
+
+      performanceTierSummaryData.push([
+        'TOTAL',
+        varianceStratifiedStats.totalMerchants,
+        varianceStratifiedStats.totalOriginalNetAcv,
+        varianceStratifiedStats.totalProjectedNetAcv,
+        varianceStratifiedStats.totalAcvVariance,
+        (grandTotalVariancePercent / 100).toFixed(4)
+      ]);
+    } else {
+      performanceTierSummaryData.push(['No data available for current filters', '', '', '', '', '']);
+    }
+
+    // Create second worksheet
+    const ws2 = XLSX.utils.aoa_to_sheet(performanceTierSummaryData);
+    const colWidths2 = [
+      { wch: 25 }, // Performance Tier
+      { wch: 12 }, // Merchant Count
+      { wch: 15 }, // Original Net ACV
+      { wch: 15 }, // Projected Net ACV
+      { wch: 15 }, // ACV Variance ($)
+      { wch: 12 }  // % of Original
+    ];
+    ws2['!cols'] = colWidths2;
+    XLSX.utils.book_append_sheet(wb, ws2, 'Performance Tier Summary');
 
     // Write and download file
     XLSX.writeFile(wb, `acv-variance-summary-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const getVarianceTier = (variancePercent: number): string => {
-    if (variancePercent > 110) return 'exceeding';
-    if (variancePercent >= 90) return 'meeting';
-    if (variancePercent >= 70) return 'below';
-    return 'significantlyBelow';
+    if (variancePercent > 100) return 'exceeding100';
+    if (variancePercent >= 80) return 'meeting80';
+    if (variancePercent >= 50) return 'below50';
+    if (variancePercent >= 30) return 'below30';
+    return 'significantlyBelow30';
   };
 
   const handleExcludeToggle = (accountId: string) => {
@@ -418,10 +555,11 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     const avgAcvVariance = filteredAndIncludedData.length > 0 ? totalAcvVariance / filteredAndIncludedData.length : 0;
 
     const varianceCounts = {
-      exceeding: filteredAndIncludedData.filter(m => m.acvVariancePercent > 110).length,
-      meeting: filteredAndIncludedData.filter(m => m.acvVariancePercent >= 90 && m.acvVariancePercent <= 110).length,
-      below: filteredAndIncludedData.filter(m => m.acvVariancePercent < 90 && m.acvVariancePercent >= 70).length,
-      significantlyBelow: filteredAndIncludedData.filter(m => m.acvVariancePercent < 70).length
+      exceeding100: filteredAndIncludedData.filter(m => m.acvVariancePercent > 100).length,
+      meeting80: filteredAndIncludedData.filter(m => m.acvVariancePercent >= 80 && m.acvVariancePercent <= 100).length,
+      below50: filteredAndIncludedData.filter(m => m.acvVariancePercent >= 50 && m.acvVariancePercent < 80).length,
+      below30: filteredAndIncludedData.filter(m => m.acvVariancePercent >= 30 && m.acvVariancePercent < 50).length,
+      significantlyBelow30: filteredAndIncludedData.filter(m => m.acvVariancePercent < 30).length
     };
 
     return {
@@ -477,11 +615,14 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       const daysLiveThreshold = parseInt(daysLiveFilter);
       dataToCount = dataToCount.filter(item => item.daysLive >= daysLiveThreshold);
     }
+    // Exclude merchants that are excluded
+    dataToCount = dataToCount.filter(item => !excludedMerchants.has(item.accountId));
+
     dataToCount.forEach(item => {
       counts[item.pricingModel] = (counts[item.pricingModel] || 0) + 1;
     });
     return counts;
-  }, [acvData, hideInsufficientData, daysLiveFilter]);
+  }, [acvData, hideInsufficientData, daysLiveFilter, excludedMerchants]);
 
   // Get unique labels paid by and counts
   const labelsPaidByCounts = React.useMemo(() => {
@@ -492,11 +633,14 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       const daysLiveThreshold = parseInt(daysLiveFilter);
       dataToCount = dataToCount.filter(item => item.daysLive >= daysLiveThreshold);
     }
+    // Exclude merchants that are excluded
+    dataToCount = dataToCount.filter(item => !excludedMerchants.has(item.accountId));
+
     dataToCount.forEach(item => {
       counts[item.labelsPaidBy] = (counts[item.labelsPaidBy] || 0) + 1;
     });
     return counts;
-  }, [acvData, hideInsufficientData, daysLiveFilter]);
+  }, [acvData, hideInsufficientData, daysLiveFilter, excludedMerchants]);
 
   // Calculate stratified statistics by Labels Paid By and Pricing Model
   const stratifiedStats = React.useMemo(() => {
@@ -623,6 +767,132 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       }
     };
   }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, hideInsufficientData, daysLiveFilter]);
+
+  // Calculate variance magnitude stratified statistics
+  const varianceStratifiedStats = React.useMemo(() => {
+    // Filter data based on current filters (but not excludedMerchants yet)
+    // Note: We don't apply hideInsufficientData filter here since we want to show insufficient data as a separate tier
+    const filteredForStats = acvData.filter(item => {
+      // Pricing model filter
+      if (pricingModelFilter !== 'all' && item.pricingModel !== pricingModelFilter) {
+        return false;
+      }
+      // Labels paid by filter
+      if (labelsPaidByFilter !== 'all' && item.labelsPaidBy !== labelsPaidByFilter) {
+        return false;
+      }
+      // Days live filter
+      if (daysLiveFilter !== 'all') {
+        const daysLiveThreshold = parseInt(daysLiveFilter);
+        if (item.daysLive < daysLiveThreshold) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Further filter to exclude merchants
+    const includedData = filteredForStats.filter(item => !excludedMerchants.has(item.accountId));
+
+    // Group by variance tier, separating insufficient data
+    const varianceGroups: { [key: string]: AcvImpactData[] } = {
+      exceeding100: [],
+      meeting80: [],
+      below50: [],
+      below30: [],
+      significantlyBelow30: [],
+      insufficientData: []
+    };
+
+    includedData.forEach(item => {
+      if (!item.hasSufficientData) {
+        // Separate insufficient data merchants regardless of their variance
+        varianceGroups.insufficientData.push(item);
+      } else {
+        // Only calculate variance tier for merchants with sufficient data
+        const tier = getVarianceTier(item.acvVariancePercent);
+        varianceGroups[tier].push(item);
+      }
+    });
+
+    // Calculate stats for each variance tier
+    const varianceTierStats = Object.entries(varianceGroups).map(([tier, items]) => {
+      const totalOriginalNetAcv = items.reduce((sum, item) => sum + item.originalNetAcv, 0);
+      const totalProjectedNetAcv = items.reduce((sum, item) => sum + item.projectedNetAcv, 0);
+      const totalAcvVariance = totalProjectedNetAcv - totalOriginalNetAcv;
+      const avgAcvVariance = items.length > 0 ? totalAcvVariance / items.length : 0;
+
+      // Get tier display info
+      let tierDisplay = '';
+      let tierColor: 'success' | 'primary' | 'warning' | 'error' | 'secondary' | 'info' = 'primary';
+      switch (tier) {
+        case 'exceeding100':
+          tierDisplay = '>100%';
+          tierColor = 'success';
+          break;
+        case 'meeting80':
+          tierDisplay = '80-100%';
+          tierColor = 'primary';
+          break;
+        case 'below50':
+          tierDisplay = '50-80%';
+          tierColor = 'warning';
+          break;
+        case 'below30':
+          tierDisplay = '30-50%';
+          tierColor = 'error';
+          break;
+        case 'significantlyBelow30':
+          tierDisplay = '<30%';
+          tierColor = 'error';
+          break;
+        case 'insufficientData':
+          tierDisplay = 'Insufficient Data';
+          tierColor = 'secondary';
+          break;
+      }
+
+      return {
+        tier,
+        tierDisplay,
+        tierColor,
+        merchantCount: items.length,
+        totalOriginalNetAcv,
+        totalProjectedNetAcv,
+        totalAcvVariance,
+        avgAcvVariance,
+        variancePercent: totalOriginalNetAcv !== 0 ? (totalProjectedNetAcv / totalOriginalNetAcv) * 100 : 0
+      };
+    }).filter(group => group.merchantCount > 0); // Only include non-empty groups
+
+    // Calculate subtotals for sufficient vs insufficient data
+    const sufficientDataItems = includedData.filter(item => item.hasSufficientData);
+    const insufficientDataItems = includedData.filter(item => !item.hasSufficientData);
+
+    const sufficientTotals = {
+      merchantCount: sufficientDataItems.length,
+      totalOriginalNetAcv: sufficientDataItems.reduce((sum, item) => sum + item.originalNetAcv, 0),
+      totalProjectedNetAcv: sufficientDataItems.reduce((sum, item) => sum + item.projectedNetAcv, 0),
+      totalAcvVariance: sufficientDataItems.reduce((sum, item) => sum + item.projectedNetAcv, 0) - sufficientDataItems.reduce((sum, item) => sum + item.originalNetAcv, 0)
+    };
+
+    const insufficientTotals = {
+      merchantCount: insufficientDataItems.length,
+      totalOriginalNetAcv: insufficientDataItems.reduce((sum, item) => sum + item.originalNetAcv, 0),
+      totalProjectedNetAcv: insufficientDataItems.reduce((sum, item) => sum + item.projectedNetAcv, 0),
+      totalAcvVariance: insufficientDataItems.reduce((sum, item) => sum + item.projectedNetAcv, 0) - insufficientDataItems.reduce((sum, item) => sum + item.originalNetAcv, 0)
+    };
+
+    return {
+      tierStats: varianceTierStats,
+      sufficientTotals,
+      insufficientTotals,
+      totalMerchants: includedData.length,
+      totalOriginalNetAcv: includedData.reduce((sum, item) => sum + item.originalNetAcv, 0),
+      totalProjectedNetAcv: includedData.reduce((sum, item) => sum + item.projectedNetAcv, 0),
+      totalAcvVariance: includedData.reduce((sum, item) => sum + item.projectedNetAcv, 0) - includedData.reduce((sum, item) => sum + item.originalNetAcv, 0)
+    };
+  }, [acvData, excludedMerchants, pricingModelFilter, labelsPaidByFilter, daysLiveFilter]);
 
   if (loading) {
     return (
@@ -767,28 +1037,34 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
             variant={varianceFilter === 'all' ? 'filled' : 'outlined'}
           />
           <Chip
-            label={`Exceeding >10% (${displaySummary.varianceCounts.exceeding})`}
-            onClick={() => setVarianceFilter('exceeding')}
-            color={varianceFilter === 'exceeding' ? 'success' : 'default'}
-            variant={varianceFilter === 'exceeding' ? 'filled' : 'outlined'}
+            label={`>100% (${displaySummary.varianceCounts.exceeding100})`}
+            onClick={() => setVarianceFilter('exceeding100')}
+            color={varianceFilter === 'exceeding100' ? 'success' : 'default'}
+            variant={varianceFilter === 'exceeding100' ? 'filled' : 'outlined'}
           />
           <Chip
-            label={`Meeting ±10% (${displaySummary.varianceCounts.meeting})`}
-            onClick={() => setVarianceFilter('meeting')}
-            color={varianceFilter === 'meeting' ? 'primary' : 'default'}
-            variant={varianceFilter === 'meeting' ? 'filled' : 'outlined'}
+            label={`80-100% (${displaySummary.varianceCounts.meeting80})`}
+            onClick={() => setVarianceFilter('meeting80')}
+            color={varianceFilter === 'meeting80' ? 'primary' : 'default'}
+            variant={varianceFilter === 'meeting80' ? 'filled' : 'outlined'}
           />
           <Chip
-            label={`Below 10-30% (${displaySummary.varianceCounts.below})`}
-            onClick={() => setVarianceFilter('below')}
-            color={varianceFilter === 'below' ? 'warning' : 'default'}
-            variant={varianceFilter === 'below' ? 'filled' : 'outlined'}
+            label={`50-80% (${displaySummary.varianceCounts.below50})`}
+            onClick={() => setVarianceFilter('below50')}
+            color={varianceFilter === 'below50' ? 'warning' : 'default'}
+            variant={varianceFilter === 'below50' ? 'filled' : 'outlined'}
           />
           <Chip
-            label={`Significantly Below >30% (${displaySummary.varianceCounts.significantlyBelow})`}
-            onClick={() => setVarianceFilter('significantlyBelow')}
-            color={varianceFilter === 'significantlyBelow' ? 'error' : 'default'}
-            variant={varianceFilter === 'significantlyBelow' ? 'filled' : 'outlined'}
+            label={`30-50% (${displaySummary.varianceCounts.below30})`}
+            onClick={() => setVarianceFilter('below30')}
+            color={varianceFilter === 'below30' ? 'error' : 'default'}
+            variant={varianceFilter === 'below30' ? 'filled' : 'outlined'}
+          />
+          <Chip
+            label={`<30% (${displaySummary.varianceCounts.significantlyBelow30})`}
+            onClick={() => setVarianceFilter('significantlyBelow30')}
+            color={varianceFilter === 'significantlyBelow30' ? 'error' : 'default'}
+            variant={varianceFilter === 'significantlyBelow30' ? 'filled' : 'outlined'}
           />
         </Box>
       </Box>
@@ -852,6 +1128,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
           >
             <MenuItem value="all">All Merchants</MenuItem>
             <MenuItem value="under30">&lt;30 Days Live</MenuItem>
+            <MenuItem value="30-60">30-60 Days Live</MenuItem>
             <MenuItem value="30">30+ Days Live</MenuItem>
             <MenuItem value="60">60+ Days Live</MenuItem>
             <MenuItem value="90">90+ Days Live</MenuItem>
@@ -1129,11 +1406,221 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         </CardContent>
       </Card>
 
+      {/* Variance Magnitude Stratified Summary */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            ACV Variance Summary by Performance Tier
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Merchant distribution and ACV impact across performance variance tiers
+          </Typography>
+          <TableContainer component={Paper}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Performance Tier</strong></TableCell>
+                  <TableCell align="right"><strong>Merchants</strong></TableCell>
+                  <TableCell align="right"><strong>Original Net ACV</strong></TableCell>
+                  <TableCell align="right"><strong>Projected Net ACV</strong></TableCell>
+                  <TableCell align="right"><strong>ACV Variance</strong></TableCell>
+                  <TableCell align="right"><strong>% of Original</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {/* Variance Tier Rows (only for merchants with sufficient data) */}
+                {varianceStratifiedStats.tierStats.filter(tier => tier.tier !== 'insufficientData').map((tier, index) => (
+                  <TableRow
+                    key={tier.tier}
+                    sx={{
+                      backgroundColor: index % 2 === 0 ? 'action.hover' : 'inherit',
+                      '&:hover': { backgroundColor: 'action.selected' }
+                    }}
+                  >
+                    <TableCell>
+                      <Chip
+                        label={tier.tierDisplay}
+                        size="small"
+                        color={tier.tierColor}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell align="right">{tier.merchantCount}</TableCell>
+                    <TableCell align="right">{formatCurrency(tier.totalOriginalNetAcv)}</TableCell>
+                    <TableCell align="right">{formatCurrency(tier.totalProjectedNetAcv)}</TableCell>
+                    <TableCell align="right">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                        {tier.totalAcvVariance >= 0 ? (
+                          <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                        ) : (
+                          <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                        )}
+                        <Typography
+                          variant="body2"
+                          color={tier.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                          fontWeight="medium"
+                        >
+                          {formatCurrency(tier.totalAcvVariance)}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={tier.variancePercent >= 100 ? 'success.main' : 'error.main'}
+                        fontWeight="medium"
+                      >
+                        {tier.variancePercent.toFixed(1)}%
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ))}
+
+                {/* Subtotal Row for Sufficient Data */}
+                {varianceStratifiedStats.sufficientTotals.merchantCount > 0 && (
+                  <TableRow sx={{ backgroundColor: 'grey.100', '& td': { fontWeight: 'bold', borderTop: '2px solid', borderColor: 'divider' } }}>
+                    <TableCell><strong>SUBTOTAL (Sufficient Data)</strong></TableCell>
+                    <TableCell align="right">{varianceStratifiedStats.sufficientTotals.merchantCount}</TableCell>
+                    <TableCell align="right">{formatCurrency(varianceStratifiedStats.sufficientTotals.totalOriginalNetAcv)}</TableCell>
+                    <TableCell align="right">{formatCurrency(varianceStratifiedStats.sufficientTotals.totalProjectedNetAcv)}</TableCell>
+                    <TableCell align="right">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                        {varianceStratifiedStats.sufficientTotals.totalAcvVariance >= 0 ? (
+                          <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                        ) : (
+                          <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                        )}
+                        <Typography
+                          variant="body2"
+                          color={varianceStratifiedStats.sufficientTotals.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                          fontWeight="bold"
+                        >
+                          {formatCurrency(varianceStratifiedStats.sufficientTotals.totalAcvVariance)}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={varianceStratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0 &&
+                               (varianceStratifiedStats.sufficientTotals.totalProjectedNetAcv / varianceStratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100 >= 100 ?
+                               'success.main' : 'error.main'}
+                        fontWeight="bold"
+                      >
+                        {varianceStratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0 ?
+                          `${(((varianceStratifiedStats.sufficientTotals.totalProjectedNetAcv / varianceStratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                          'N/A'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {/* Insufficient Data Row */}
+                {varianceStratifiedStats.insufficientTotals.merchantCount > 0 && (
+                  <TableRow>
+                    <TableCell>
+                      <Chip
+                        label="Insufficient Data"
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell align="right">{varianceStratifiedStats.insufficientTotals.merchantCount}</TableCell>
+                    <TableCell align="right">{formatCurrency(varianceStratifiedStats.insufficientTotals.totalOriginalNetAcv)}</TableCell>
+                    <TableCell align="right">{formatCurrency(varianceStratifiedStats.insufficientTotals.totalProjectedNetAcv)}</TableCell>
+                    <TableCell align="right">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                        {varianceStratifiedStats.insufficientTotals.totalAcvVariance >= 0 ? (
+                          <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                        ) : (
+                          <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                        )}
+                        <Typography
+                          variant="body2"
+                          color={varianceStratifiedStats.insufficientTotals.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                          fontWeight="medium"
+                        >
+                          {formatCurrency(varianceStratifiedStats.insufficientTotals.totalAcvVariance)}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={varianceStratifiedStats.insufficientTotals.totalOriginalNetAcv !== 0 &&
+                               (varianceStratifiedStats.insufficientTotals.totalProjectedNetAcv / varianceStratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100 >= 100 ?
+                               'success.main' : 'error.main'}
+                        fontWeight="medium"
+                      >
+                        {varianceStratifiedStats.insufficientTotals.totalOriginalNetAcv !== 0 ?
+                          `${(((varianceStratifiedStats.insufficientTotals.totalProjectedNetAcv / varianceStratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                          'N/A'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {/* Grand Total Row */}
+                {varianceStratifiedStats.tierStats.length > 0 && (
+                  <TableRow sx={{ backgroundColor: 'primary.light', '& td': { fontWeight: 'bold', borderTop: '2px solid', borderColor: 'primary.main' } }}>
+                    <TableCell><strong>TOTAL</strong></TableCell>
+                    <TableCell align="right">{varianceStratifiedStats.totalMerchants}</TableCell>
+                    <TableCell align="right">{formatCurrency(varianceStratifiedStats.totalOriginalNetAcv)}</TableCell>
+                    <TableCell align="right">{formatCurrency(varianceStratifiedStats.totalProjectedNetAcv)}</TableCell>
+                    <TableCell align="right">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                        {varianceStratifiedStats.totalAcvVariance >= 0 ? (
+                          <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                        ) : (
+                          <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                        )}
+                        <Typography
+                          variant="body2"
+                          color={varianceStratifiedStats.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                          fontWeight="bold"
+                        >
+                          {formatCurrency(varianceStratifiedStats.totalAcvVariance)}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={varianceStratifiedStats.totalOriginalNetAcv !== 0 &&
+                               (varianceStratifiedStats.totalProjectedNetAcv / varianceStratifiedStats.totalOriginalNetAcv) * 100 >= 100 ?
+                               'success.main' : 'error.main'}
+                        fontWeight="bold"
+                      >
+                        {varianceStratifiedStats.totalOriginalNetAcv !== 0 ?
+                          `${(((varianceStratifiedStats.totalProjectedNetAcv / varianceStratifiedStats.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                          'N/A'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {/* No Data Row */}
+                {varianceStratifiedStats.tierStats.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No data available for current filters
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
+
       {/* Data Table */}
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Merchant ACV Impacts ({filteredData.length} merchants)
+            Merchant ACV Impacts ({filteredData.length} merchants{excludedMerchants.size > 0 && `, ${excludedMerchants.size} excluded`})
           </Typography>
           <TableContainer component={Paper} sx={{ maxHeight: 600 }}>
             <Table stickyHeader size="small">
@@ -1165,13 +1652,13 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                   </TableCell>
                   <TableCell>Merchant</TableCell>
                   <TableCell align="right">Days Live</TableCell>
-                  <TableCell align="right">Starting ACV</TableCell>
                   <TableCell align="right">Original Ending ACV</TableCell>
                   <TableCell align="right">Projected Ending ACV</TableCell>
                   <TableCell align="right">Original Net ACV</TableCell>
                   <TableCell align="right">Projected Net ACV</TableCell>
                   <TableCell align="right">ACV Variance</TableCell>
                   <TableCell align="center">% of Original</TableCell>
+                  <TableCell align="center">Performance Tier</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1185,17 +1672,14 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                       />
                     </TableCell>
                     <TableCell>
-                      <Box>
-                        <Typography variant="body2" fontWeight="medium">
-                          {row.merchantName}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {row.pricingModel} • {row.labelsPaidBy === 'Loop' ? 'LPL' : 'MPL'}
-                        </Typography>
-                      </Box>
+                      {renderMerchantWithLinks(
+                        row.merchantName,
+                        row.accountId,
+                        row.opportunityId,
+                        `${row.pricingModel} • ${row.labelsPaidBy === 'Loop' ? 'LPL' : 'MPL'}`
+                      )}
                     </TableCell>
                     <TableCell align="right">{row.daysLive}</TableCell>
-                    <TableCell align="right">{formatCurrency(row.startingAcv)}</TableCell>
                     <TableCell align="right">{formatCurrency(row.originalEndingAcv)}</TableCell>
                     <TableCell align="right">{formatCurrency(row.projectedEndingAcv)}</TableCell>
                     <TableCell align="right">{formatCurrency(row.originalNetAcv)}</TableCell>
@@ -1223,6 +1707,40 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                           </Tooltip>
                         )}
                       </Box>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Chip
+                        label={(() => {
+                          if (!row.hasSufficientData) {
+                            return 'Insufficient Data';
+                          }
+                          const tier = getVarianceTier(row.acvVariancePercent);
+                          switch (tier) {
+                            case 'exceeding100': return '>100%';
+                            case 'meeting80': return '80-100%';
+                            case 'below50': return '50-80%';
+                            case 'below30': return '30-50%';
+                            case 'significantlyBelow30': return '<30%';
+                            default: return 'N/A';
+                          }
+                        })()}
+                        size="small"
+                        color={(() => {
+                          if (!row.hasSufficientData) {
+                            return 'secondary';
+                          }
+                          const tier = getVarianceTier(row.acvVariancePercent);
+                          switch (tier) {
+                            case 'exceeding100': return 'success';
+                            case 'meeting80': return 'primary';
+                            case 'below50': return 'warning';
+                            case 'below30': return 'error';
+                            case 'significantlyBelow30': return 'error';
+                            default: return 'default';
+                          }
+                        })()}
+                        variant="outlined"
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
