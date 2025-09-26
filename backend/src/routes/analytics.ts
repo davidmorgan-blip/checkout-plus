@@ -87,11 +87,11 @@ router.get('/overview', async (req, res) => {
           ) as trailing_4week_variance_bps
         FROM opportunities o
         LEFT JOIN performance_actuals p ON o.account_casesafe_id = p.salesforce_account_id
-          AND p.iso_week = (SELECT MAX(p2.iso_week) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id)
+          AND p.iso_week = (SELECT MAX(p2.iso_week) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id AND p2.ecomm_orders > 0)
         WHERE o.checkout_enabled = 'Yes'
           AND o.annual_order_volume > 0
           AND o.pricing_model != 'Flat'
-          AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
+          AND EXISTS (SELECT 1 FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id)
       `;
 
       if (daysLiveFilter !== 'all') {
@@ -484,7 +484,7 @@ router.get('/volume', async (req, res) => {
       WHERE o.checkout_enabled = 'Yes'
         AND o.annual_order_volume > 0
         AND o.pricing_model != 'Flat'
-        AND (SELECT JULIANDAY('now') - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
+        AND EXISTS (SELECT 1 FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id)
     `;
 
     const params: any[] = [];

@@ -215,7 +215,7 @@ router.get('/net-revenue', async (req, res) => {
       let projectedAnnualVolume = 0;
       let actualAdoptionRate = 0;
 
-      if (weeklyPerformance.length > 0) {
+      if (weeklyPerformance.length >= 4) {
         // Calculate seasonality-adjusted performance ratio (Volume tab methodology)
         const vertical = opportunity.benchmark_vertical || 'Total ex. Swimwear';
         const seasonalityCurve = vertical === 'Swimwear' ? 'Swimwear' : 'Total ex. Swimwear';
@@ -243,33 +243,9 @@ router.get('/net-revenue', async (req, res) => {
         // Calculate average adoption rate from recent weeks
         actualAdoptionRate = (recentWeeks.reduce((sum, w) => sum + w.weekly_adoption_rate, 0) / recentWeeks.length) * 100;
       } else {
-        // Fallback to historical average if no recent data
-        const fallbackQuery = `
-          SELECT
-            AVG(p.ecomm_orders) as avg_weekly_orders,
-            AVG(CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END) as avg_adoption_rate
-          FROM performance_actuals p
-          WHERE p.salesforce_account_id = ?
-            AND p.ecomm_orders > 0
-        `;
-
-        const fallbackPerformance = await new Promise<any>((resolve, reject) => {
-          db.get(fallbackQuery, [opportunity.accountId], (err, row: any) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-            resolve(row || {});
-          });
-        });
-
-        if (fallbackPerformance.avg_weekly_orders && fallbackPerformance.avg_weekly_orders > 0) {
-          projectedAnnualVolume = fallbackPerformance.avg_weekly_orders * 52;
-          actualAdoptionRate = (fallbackPerformance.avg_adoption_rate || 0) * 100;
-        } else {
-          projectedAnnualVolume = 0;
-          actualAdoptionRate = 0;
-        }
+        // Insufficient recent data - no forecast available
+        projectedAnnualVolume = 0;
+        actualAdoptionRate = 0;
       }
 
       // Calculate expected and actual revenue
@@ -326,7 +302,9 @@ router.get('/net-revenue', async (req, res) => {
         adjustmentStatus = 'Not Adjusted';
       }
 
-      netRevenueData.push({
+      // Only include merchants with sufficient data for forecasting (4+ weeks)
+      if (weeklyPerformance.length >= 4) {
+        netRevenueData.push({
         accountId: opportunity.accountId,
         opportunityId: opportunity.opportunityId,
         accountName: opportunity.accountName,
@@ -350,6 +328,7 @@ router.get('/net-revenue', async (req, res) => {
         implementationStatus: opportunity.implementationStatus,
         daysLive: daysLive
       });
+      }
     }
 
     res.json({
@@ -470,7 +449,7 @@ router.get('/net-revenue/export', async (req, res) => {
       let projectedAnnualVolume = 0;
       let actualAdoptionRate = 0;
 
-      if (weeklyPerformance.length > 0) {
+      if (weeklyPerformance.length >= 4) {
         // Calculate seasonality-adjusted performance ratio
         const vertical = opportunity.benchmark_vertical || 'Total ex. Swimwear';
         const seasonalityCurve = vertical === 'Swimwear' ? 'Swimwear' : 'Total ex. Swimwear';
@@ -495,33 +474,9 @@ router.get('/net-revenue/export', async (req, res) => {
         projectedAnnualVolume = opportunity.annual_order_volume * performanceRatio;
         actualAdoptionRate = (recentWeeks.reduce((sum, w) => sum + w.weekly_adoption_rate, 0) / recentWeeks.length) * 100;
       } else {
-        // Fallback to historical average
-        const fallbackQuery = `
-          SELECT
-            AVG(p.ecomm_orders) as avg_weekly_orders,
-            AVG(CASE WHEN p.ecomm_orders > 0 THEN CAST(p.accepted_offers AS REAL) / p.ecomm_orders ELSE 0 END) as avg_adoption_rate
-          FROM performance_actuals p
-          WHERE p.salesforce_account_id = ?
-            AND p.ecomm_orders > 0
-        `;
-
-        const fallbackPerformance = await new Promise<any>((resolve, reject) => {
-          db.get(fallbackQuery, [opportunity.accountId], (err, row: any) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-            resolve(row || {});
-          });
-        });
-
-        if (fallbackPerformance.avg_weekly_orders && fallbackPerformance.avg_weekly_orders > 0) {
-          projectedAnnualVolume = fallbackPerformance.avg_weekly_orders * 52;
-          actualAdoptionRate = (fallbackPerformance.avg_adoption_rate || 0) * 100;
-        } else {
-          projectedAnnualVolume = 0;
-          actualAdoptionRate = 0;
-        }
+        // Insufficient recent data - no forecast available
+        projectedAnnualVolume = 0;
+        actualAdoptionRate = 0;
       }
 
       // Calculate expected and actual revenue
@@ -558,8 +513,9 @@ router.get('/net-revenue/export', async (req, res) => {
       const hasVolumeIssue = volumeVariancePercent <= -20; // -20% or worse volume variance
       const hasAdoptionIssue = adoptionVarianceBps <= -1000; // -1000bps or worse adoption variance
 
-
-      const merchantData: any = {
+      // Only include merchants with sufficient data for forecasting (4+ weeks)
+      if (weeklyPerformance.length >= 4) {
+        const merchantData: any = {
         'SFDC Account ID': opportunity.accountId,
         'SFDC Opportunity ID': opportunity.opportunity_id || '',
         'Merchant Name': opportunity.accountName,
@@ -607,6 +563,7 @@ router.get('/net-revenue/export', async (req, res) => {
       merchantData['Revenue Variance'] = Math.round(revenueVariance);
 
       csvData.push(merchantData);
+      }
     }
 
     // Convert to CSV format

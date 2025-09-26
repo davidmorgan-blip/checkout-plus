@@ -159,9 +159,10 @@ export default function SimpleDashboard() {
     if (!dataLoaded && tabValue !== 3) {
       // If no data and we're not on Data Upload tab, switch to Data Upload
       setTabValue(3);
+    } else if (dataLoaded && tabValue === 3) {
+      // When data becomes available and we're on Data Upload tab, switch to Net Revenue
+      setTabValue(0);
     }
-    // When data becomes available, if we're on Data Upload tab, switch to Net Revenue
-    // If we start with Net Revenue (index 0) and data loads, we stay there automatically
   }, [dataLoaded, tabValue]);
 
   // Fetch opportunities breakdown when data is loaded

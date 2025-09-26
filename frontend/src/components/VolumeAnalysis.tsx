@@ -161,8 +161,11 @@ export default function VolumeAnalysis() {
   // Get unique merchant names for autocomplete
   const getMerchantOptions = () => {
     if (!volumeData) return [];
-    const merchantNames = volumeData.forecasts.map(f => f.merchant_name).filter(Boolean);
-    return Array.from(new Set(merchantNames)).sort();
+    // Get merchants from both forecasts and weekly trends data
+    const forecastMerchants = volumeData.forecasts.map(f => f.merchant_name).filter(Boolean);
+    const trendsMerchants = volumeData.weeklyTrends.map(t => t.merchant_name).filter(Boolean);
+    const allMerchants = [...forecastMerchants, ...trendsMerchants];
+    return Array.from(new Set(allMerchants)).sort();
   };
 
   // Calculate forecast performance tier based on forecast vs expected volume
