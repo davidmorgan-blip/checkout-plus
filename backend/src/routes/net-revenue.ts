@@ -28,6 +28,7 @@ interface NetRevenueData {
   interactionContribution: number;
   implementationStatus: string;
   daysLive: number;
+  hasSufficientData: boolean;
 }
 
 // Core revenue calculation functions
@@ -146,8 +147,8 @@ router.get('/net-revenue', async (req, res) => {
         (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) as daysLive
       FROM opportunities o
       WHERE o.checkout_enabled = 'Yes'
-        AND (o.annual_order_volume > 0 OR o.pricing_model = 'Flat')
-        AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
+        AND o.net_acv IS NOT NULL
+        AND o.net_acv != 0
     `;
 
     // Apply days live filter at SQL level for consistency with other tabs
@@ -227,7 +228,7 @@ router.get('/net-revenue', async (req, res) => {
       // For Flat pricing, performance data isn't needed for revenue calculation
       if (opportunity.pricingModel === 'Flat') {
         // Use expected values for Flat pricing (no performance variance)
-        projectedAnnualVolume = opportunity.annual_order_volume;
+        projectedAnnualVolume = opportunity.annual_order_volume || 0;
         actualAdoptionRate = opportunity.adoption_rate || 50;
       } else if (weeklyPerformance.length >= 4) {
         // Calculate seasonality-adjusted performance ratio (Volume tab methodology)
@@ -273,7 +274,7 @@ router.get('/net-revenue', async (req, res) => {
       const revenueVariance = actualRevenue - expectedRevenue;
       const revenueVariancePercent = expectedRevenue > 0 ? (revenueVariance / expectedRevenue) * 100 : 0;
       const adoptionVariance = actualAdoptionRate - (opportunity.adoption_rate || 50);
-      const volumeVariance = ((projectedAnnualVolume - opportunity.annual_order_volume) / opportunity.annual_order_volume) * 100;
+      const volumeVariance = opportunity.annual_order_volume > 0 ? ((projectedAnnualVolume - opportunity.annual_order_volume) / opportunity.annual_order_volume) * 100 : 0;
 
       // Calculate variance contributions
       // Revenue with expected adoption but actual volume
@@ -316,9 +317,11 @@ router.get('/net-revenue', async (req, res) => {
         adjustmentStatus = 'Not Adjusted';
       }
 
-      // Include merchants with sufficient data for forecasting (4+ weeks) OR Flat pricing models
-      if (weeklyPerformance.length >= 4 || opportunity.pricingModel === 'Flat') {
-        netRevenueData.push({
+      // Determine if merchant has sufficient data for forecasting
+      const hasSufficientData = weeklyPerformance.length >= 4 || opportunity.pricingModel === 'Flat';
+
+      // Include all merchants (like ACV Impacts does) but mark their data sufficiency
+      netRevenueData.push({
         accountId: opportunity.accountId,
         opportunityId: opportunity.opportunityId,
         accountName: opportunity.accountName,
@@ -340,9 +343,9 @@ router.get('/net-revenue', async (req, res) => {
         adoptionContribution: Math.round(adoptionContribution),
         interactionContribution: Math.round(interactionContribution),
         implementationStatus: opportunity.implementationStatus,
-        daysLive: daysLive
+        daysLive: daysLive,
+        hasSufficientData: hasSufficientData
       });
-      }
     }
 
     res.json({
@@ -390,8 +393,8 @@ router.get('/net-revenue/export', async (req, res) => {
         (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) as daysLive
       FROM opportunities o
       WHERE o.checkout_enabled = 'Yes'
-        AND (o.annual_order_volume > 0 OR o.pricing_model = 'Flat')
-        AND (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p.first_offer_date) FROM performance_actuals p WHERE p.salesforce_account_id = o.account_casesafe_id LIMIT 1) > 0
+        AND o.net_acv IS NOT NULL
+        AND o.net_acv != 0
     `;
 
     // Apply days live filter at SQL level for consistency with other tabs
@@ -507,7 +510,7 @@ router.get('/net-revenue/export', async (req, res) => {
       const revenueVariance = actualRevenue - expectedRevenue;
       const revenueVariancePercent = expectedRevenue > 0 ? (revenueVariance / expectedRevenue) * 100 : 0;
       const adoptionVariance = actualAdoptionRate - (opportunity.adoption_rate || 50);
-      const volumeVariance = ((projectedAnnualVolume - opportunity.annual_order_volume) / opportunity.annual_order_volume) * 100;
+      const volumeVariance = opportunity.annual_order_volume > 0 ? ((projectedAnnualVolume - opportunity.annual_order_volume) / opportunity.annual_order_volume) * 100 : 0;
 
       // Calculate variance contributions
       const revenueWithExpectedAdoption = calculateActualRevenue(opportunity, {
@@ -524,15 +527,17 @@ router.get('/net-revenue/export', async (req, res) => {
       const adoptionContribution = revenueWithExpectedVolume - expectedRevenue;
       const interactionContribution = actualRevenue - revenueWithExpectedAdoption - revenueWithExpectedVolume + expectedRevenue;
 
-      const volumeVariancePercent = ((projectedAnnualVolume - opportunity.annual_order_volume) / opportunity.annual_order_volume) * 100;
+      const volumeVariancePercent = opportunity.annual_order_volume > 0 ? ((projectedAnnualVolume - opportunity.annual_order_volume) / opportunity.annual_order_volume) * 100 : 0;
       const adoptionVarianceBps = (actualAdoptionRate - (opportunity.adoption_rate || 50)) * 100; // Convert to basis points
 
       const hasVolumeIssue = volumeVariancePercent <= -20; // -20% or worse volume variance
       const hasAdoptionIssue = adoptionVarianceBps <= -1000; // -1000bps or worse adoption variance
 
-      // Only include merchants with sufficient data for forecasting (4+ weeks)
-      if (weeklyPerformance.length >= 4) {
-        const merchantData: any = {
+      // Determine if merchant has sufficient data for forecasting
+      const csvHasSufficientData = weeklyPerformance.length >= 4 || opportunity.pricingModel === 'Flat';
+
+      // Include all merchants in CSV export (like ACV Impacts does)
+      const merchantData: any = {
         'SFDC Account ID': opportunity.accountId,
         'SFDC Opportunity ID': opportunity.opportunityId || '',
         'Merchant Name': opportunity.accountName,
@@ -580,7 +585,6 @@ router.get('/net-revenue/export', async (req, res) => {
       merchantData['Revenue Variance'] = Math.round(revenueVariance);
 
       csvData.push(merchantData);
-      }
     }
 
     // Convert to CSV format
@@ -828,7 +832,8 @@ router.get('/acv-impacts', async (req, res) => {
       const originalNetAcv = opportunity.net_acv || 0;
       const startingAcv = opportunity.company_acv_starting_value || 0;
       const originalEndingAcv = opportunity.company_acv_ending_value || opportunity.est_offset_net_revenue || 0;
-      const projectedEndingAcv = projectedRevenue;
+      // For Flat pricing, projected ending ACV should equal original ending ACV (no variance)
+      const projectedEndingAcv = opportunity.pricing_model === 'Flat' ? originalEndingAcv : projectedRevenue;
 
       // For insufficient data merchants, ensure projected net ACV equals original net ACV (zero variance)
       const projectedNetAcv = hasSufficientData ?
@@ -836,7 +841,7 @@ router.get('/acv-impacts', async (req, res) => {
         originalNetAcv;
 
       const acvVariance = projectedNetAcv - originalNetAcv;
-      const acvVariancePercent = originalNetAcv !== 0 ? (acvVariance / Math.abs(originalNetAcv)) * 100 : 0;
+      const acvVariancePercent = originalNetAcv !== 0 ? (projectedNetAcv / originalNetAcv) * 100 : 0;
 
       merchantData.push({
         accountId: opportunity.accountId,
@@ -864,10 +869,10 @@ router.get('/acv-impacts', async (req, res) => {
 
     // Count merchants by variance categories
     const varianceCounts = {
-      exceeding: merchantData.filter(m => m.acvVariancePercent > 10).length,
-      meeting: merchantData.filter(m => m.acvVariancePercent >= -10 && m.acvVariancePercent <= 10).length,
-      below: merchantData.filter(m => m.acvVariancePercent < -10 && m.acvVariancePercent >= -30).length,
-      significantlyBelow: merchantData.filter(m => m.acvVariancePercent < -30).length
+      exceeding: merchantData.filter(m => m.acvVariancePercent > 110).length,
+      meeting: merchantData.filter(m => m.acvVariancePercent >= 90 && m.acvVariancePercent <= 110).length,
+      below: merchantData.filter(m => m.acvVariancePercent < 90 && m.acvVariancePercent >= 70).length,
+      significantlyBelow: merchantData.filter(m => m.acvVariancePercent < 70).length
     };
 
     res.json({

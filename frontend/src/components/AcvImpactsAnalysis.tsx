@@ -133,19 +133,19 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   };
 
   const formatPercent = (value: number): string => {
-    return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+    return `${value.toFixed(1)}%`;
   };
 
   const getVarianceColor = (variancePercent: number): 'success' | 'warning' | 'error' | 'default' => {
-    if (variancePercent > 10) return 'success';
-    if (variancePercent >= -10) return 'default';
-    if (variancePercent >= -30) return 'warning';
+    if (variancePercent > 110) return 'success';
+    if (variancePercent >= 90) return 'default';
+    if (variancePercent >= 70) return 'warning';
     return 'error';
   };
 
   const getVarianceIcon = (variancePercent: number) => {
-    if (variancePercent > 0) return <TrendingUpIcon fontSize="small" />;
-    if (variancePercent < 0) return <TrendingDownIcon fontSize="small" />;
+    if (variancePercent > 100) return <TrendingUpIcon fontSize="small" />;
+    if (variancePercent < 100) return <TrendingDownIcon fontSize="small" />;
     return null;
   };
 
@@ -166,7 +166,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       'Projected Ending ACV',
       'Projected Net ACV',
       'ACV Variance ($)',
-      'ACV Variance (%)',
+      '% of Original',
       'Has Sufficient Data'
     ];
 
@@ -184,7 +184,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         row.projectedEndingAcv,
         row.projectedNetAcv,
         row.acvVariance,
-        row.acvVariancePercent.toFixed(1),
+        (row.acvVariancePercent / 100).toFixed(4),
         row.hasSufficientData ? 'Yes' : 'No'
       ].join(','))
     ];
@@ -220,7 +220,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       'Original Net ACV',
       'Projected Net ACV',
       'ACV Variance ($)',
-      'ACV Variance (%)'
+      '% of Original'
     ]);
 
     // Add sufficient data section header
@@ -232,7 +232,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         .filter(group => group.dataType === 'sufficient')
         .forEach(group => {
           const variancePercent = group.totalOriginalNetAcv !== 0
-            ? (group.totalAcvVariance / group.totalOriginalNetAcv) * 100
+            ? (group.totalProjectedNetAcv / group.totalOriginalNetAcv) * 100
             : 0;
 
           summaryData.push([
@@ -243,13 +243,13 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
             group.totalOriginalNetAcv,
             group.totalProjectedNetAcv,
             group.totalAcvVariance,
-            variancePercent.toFixed(1)
+            (variancePercent / 100).toFixed(4)
           ]);
         });
 
       // Add sufficient data subtotal
       const sufficientVariancePercent = stratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0
-        ? (stratifiedStats.sufficientTotals.totalAcvVariance / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100
+        ? (stratifiedStats.sufficientTotals.totalProjectedNetAcv / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100
         : 0;
 
       summaryData.push([
@@ -260,7 +260,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         stratifiedStats.sufficientTotals.totalOriginalNetAcv,
         stratifiedStats.sufficientTotals.totalProjectedNetAcv,
         stratifiedStats.sufficientTotals.totalAcvVariance,
-        sufficientVariancePercent.toFixed(1)
+        (sufficientVariancePercent / 100).toFixed(4)
       ]);
     }
 
@@ -273,7 +273,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         .filter(group => group.dataType === 'insufficient')
         .forEach(group => {
           const variancePercent = group.totalOriginalNetAcv !== 0
-            ? (group.totalAcvVariance / group.totalOriginalNetAcv) * 100
+            ? (group.totalProjectedNetAcv / group.totalOriginalNetAcv) * 100
             : 0;
 
           summaryData.push([
@@ -284,13 +284,13 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
             group.totalOriginalNetAcv,
             group.totalProjectedNetAcv,
             group.totalAcvVariance,
-            variancePercent.toFixed(1)
+            (variancePercent / 100).toFixed(4)
           ]);
         });
 
       // Add insufficient data subtotal
       const insufficientVariancePercent = stratifiedStats.insufficientTotals.totalOriginalNetAcv !== 0
-        ? (stratifiedStats.insufficientTotals.totalAcvVariance / stratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100
+        ? (stratifiedStats.insufficientTotals.totalProjectedNetAcv / stratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100
         : 0;
 
       summaryData.push([
@@ -301,14 +301,14 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         stratifiedStats.insufficientTotals.totalOriginalNetAcv,
         stratifiedStats.insufficientTotals.totalProjectedNetAcv,
         stratifiedStats.insufficientTotals.totalAcvVariance,
-        insufficientVariancePercent.toFixed(1)
+        (insufficientVariancePercent / 100).toFixed(4)
       ]);
     }
 
     // Add grand total if we have data
     if (displaySummary && (stratifiedStats.sufficientTotals.merchantCount > 0 || stratifiedStats.insufficientTotals.merchantCount > 0)) {
       const grandTotalVariancePercent = displaySummary.totalOriginalNetAcv !== 0
-        ? (displaySummary.totalAcvVariance / displaySummary.totalOriginalNetAcv) * 100
+        ? (displaySummary.totalProjectedNetAcv / displaySummary.totalOriginalNetAcv) * 100
         : 0;
 
       summaryData.push([
@@ -319,7 +319,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         displaySummary.totalOriginalNetAcv,
         displaySummary.totalProjectedNetAcv,
         displaySummary.totalAcvVariance,
-        grandTotalVariancePercent.toFixed(1)
+        (grandTotalVariancePercent / 100).toFixed(4)
       ]);
     }
 
@@ -335,7 +335,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       { wch: 15 }, // Original Net ACV
       { wch: 15 }, // Projected Net ACV
       { wch: 15 }, // ACV Variance ($)
-      { wch: 12 }  // ACV Variance (%)
+      { wch: 12 }  // % of Original
     ];
     ws['!cols'] = colWidths;
 
@@ -347,9 +347,9 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   };
 
   const getVarianceTier = (variancePercent: number): string => {
-    if (variancePercent > 10) return 'exceeding';
-    if (variancePercent >= -10) return 'meeting';
-    if (variancePercent >= -30) return 'below';
+    if (variancePercent > 110) return 'exceeding';
+    if (variancePercent >= 90) return 'meeting';
+    if (variancePercent >= 70) return 'below';
     return 'significantlyBelow';
   };
 
@@ -381,6 +381,19 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       // Check if excluded
       if (excludedMerchants.has(item.accountId)) return false;
 
+      // Apply hideInsufficientData filter
+      if (hideInsufficientData && !item.hasSufficientData) {
+        return false;
+      }
+
+      // Apply days live filter
+      if (daysLiveFilter !== 'all') {
+        const daysLiveThreshold = parseInt(daysLiveFilter);
+        if (item.daysLive < daysLiveThreshold) {
+          return false;
+        }
+      }
+
       // Apply variance filter
       if (varianceFilter !== 'all' && getVarianceTier(item.acvVariancePercent) !== varianceFilter) {
         return false;
@@ -405,10 +418,10 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     const avgAcvVariance = filteredAndIncludedData.length > 0 ? totalAcvVariance / filteredAndIncludedData.length : 0;
 
     const varianceCounts = {
-      exceeding: filteredAndIncludedData.filter(m => m.acvVariancePercent > 10).length,
-      meeting: filteredAndIncludedData.filter(m => m.acvVariancePercent >= -10 && m.acvVariancePercent <= 10).length,
-      below: filteredAndIncludedData.filter(m => m.acvVariancePercent < -10 && m.acvVariancePercent >= -30).length,
-      significantlyBelow: filteredAndIncludedData.filter(m => m.acvVariancePercent < -30).length
+      exceeding: filteredAndIncludedData.filter(m => m.acvVariancePercent > 110).length,
+      meeting: filteredAndIncludedData.filter(m => m.acvVariancePercent >= 90 && m.acvVariancePercent <= 110).length,
+      below: filteredAndIncludedData.filter(m => m.acvVariancePercent < 90 && m.acvVariancePercent >= 70).length,
+      significantlyBelow: filteredAndIncludedData.filter(m => m.acvVariancePercent < 70).length
     };
 
     return {
@@ -419,7 +432,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       avgAcvVariance,
       varianceCounts
     };
-  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, summary]);
+  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, hideInsufficientData, daysLiveFilter, summary]);
 
   const filteredData = acvData.filter(item => {
     // Variance filter
@@ -442,6 +455,14 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       return false;
     }
 
+    // Days live filter
+    if (daysLiveFilter !== 'all') {
+      const daysLiveThreshold = parseInt(daysLiveFilter);
+      if (item.daysLive < daysLiveThreshold) {
+        return false;
+      }
+    }
+
     return true;
   });
 
@@ -450,20 +471,32 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   // Get unique pricing models and counts
   const pricingModelCounts = React.useMemo(() => {
     const counts: { [key: string]: number } = {};
-    acvData.forEach(item => {
+    let dataToCount = hideInsufficientData ? acvData.filter(item => item.hasSufficientData) : acvData;
+    // Apply days live filter
+    if (daysLiveFilter !== 'all') {
+      const daysLiveThreshold = parseInt(daysLiveFilter);
+      dataToCount = dataToCount.filter(item => item.daysLive >= daysLiveThreshold);
+    }
+    dataToCount.forEach(item => {
       counts[item.pricingModel] = (counts[item.pricingModel] || 0) + 1;
     });
     return counts;
-  }, [acvData]);
+  }, [acvData, hideInsufficientData, daysLiveFilter]);
 
   // Get unique labels paid by and counts
   const labelsPaidByCounts = React.useMemo(() => {
     const counts: { [key: string]: number } = {};
-    acvData.forEach(item => {
+    let dataToCount = hideInsufficientData ? acvData.filter(item => item.hasSufficientData) : acvData;
+    // Apply days live filter
+    if (daysLiveFilter !== 'all') {
+      const daysLiveThreshold = parseInt(daysLiveFilter);
+      dataToCount = dataToCount.filter(item => item.daysLive >= daysLiveThreshold);
+    }
+    dataToCount.forEach(item => {
       counts[item.labelsPaidBy] = (counts[item.labelsPaidBy] || 0) + 1;
     });
     return counts;
-  }, [acvData]);
+  }, [acvData, hideInsufficientData, daysLiveFilter]);
 
   // Calculate stratified statistics by Labels Paid By and Pricing Model
   const stratifiedStats = React.useMemo(() => {
@@ -484,6 +517,13 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       // Hide insufficient data filter
       if (hideInsufficientData && !item.hasSufficientData) {
         return false;
+      }
+      // Days live filter
+      if (daysLiveFilter !== 'all') {
+        const daysLiveThreshold = parseInt(daysLiveFilter);
+        if (item.daysLive < daysLiveThreshold) {
+          return false;
+        }
       }
       return true;
     });
@@ -531,7 +571,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         totalProjectedNetAcv,
         totalAcvVariance,
         avgAcvVariance,
-        variancePercent: totalOriginalNetAcv !== 0 ? (totalAcvVariance / totalOriginalNetAcv) * 100 : 0,
+        variancePercent: totalOriginalNetAcv !== 0 ? (totalProjectedNetAcv / totalOriginalNetAcv) * 100 : 0,
         dataType: 'sufficient' as const
       };
     });
@@ -552,7 +592,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         totalProjectedNetAcv,
         totalAcvVariance,
         avgAcvVariance,
-        variancePercent: totalOriginalNetAcv !== 0 ? (totalAcvVariance / totalOriginalNetAcv) * 100 : 0,
+        variancePercent: totalOriginalNetAcv !== 0 ? (totalProjectedNetAcv / totalOriginalNetAcv) * 100 : 0,
         dataType: 'insufficient' as const
       };
     });
@@ -582,7 +622,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         totalAcvVariance: insufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0) - insufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0)
       }
     };
-  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, hideInsufficientData]);
+  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, hideInsufficientData, daysLiveFilter]);
 
   if (loading) {
     return (
@@ -615,45 +655,11 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     );
   }
 
-  // Calculate adjusted summary based on current filters including hideInsufficientData
-  const adjustedSummary = React.useMemo(() => {
-    // Use the same filteredAndIncludedData that's already being calculated
-    const dataForSummary = includedData; // This already includes hideInsufficientData filter
-
-    if (dataForSummary.length === 0) {
-      return {
-        totalMerchants: 0,
-        totalOriginalNetAcv: 0,
-        totalProjectedNetAcv: 0,
-        totalAcvVariance: 0,
-        avgAcvVariance: 0,
-        varianceCounts: { exceeding: 0, meeting: 0, below: 0, significantlyBelow: 0 }
-      };
-    }
-
-    const totalOriginalNetAcv = dataForSummary.reduce((sum, item) => sum + item.originalNetAcv, 0);
-    const totalProjectedNetAcv = dataForSummary.reduce((sum, item) => sum + item.projectedNetAcv, 0);
-    const totalAcvVariance = totalProjectedNetAcv - totalOriginalNetAcv;
-    const avgAcvVariance = dataForSummary.length > 0 ? totalAcvVariance / dataForSummary.length : 0;
-
-    const varianceCounts = {
-      exceeding: dataForSummary.filter(m => m.acvVariancePercent > 10).length,
-      meeting: dataForSummary.filter(m => m.acvVariancePercent >= -10 && m.acvVariancePercent <= 10).length,
-      below: dataForSummary.filter(m => m.acvVariancePercent < -10 && m.acvVariancePercent >= -30).length,
-      significantlyBelow: dataForSummary.filter(m => m.acvVariancePercent < -30).length
-    };
-
-    return {
-      totalMerchants: dataForSummary.length,
-      totalOriginalNetAcv,
-      totalProjectedNetAcv,
-      totalAcvVariance,
-      avgAcvVariance,
-      varianceCounts
-    };
-  }, [includedData]);
-
   const displaySummary = adjustedSummary;
+
+  if (!displaySummary) {
+    return <Box sx={{ p: 3 }}>Loading...</Box>;
+  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -898,7 +904,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                   <TableCell align="right"><strong>Original Net ACV</strong></TableCell>
                   <TableCell align="right"><strong>Projected Net ACV</strong></TableCell>
                   <TableCell align="right"><strong>ACV Variance</strong></TableCell>
-                  <TableCell align="right"><strong>Variance %</strong></TableCell>
+                  <TableCell align="right"><strong>% of Original</strong></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -957,7 +963,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                               color={group.variancePercent >= 0 ? 'success.main' : 'error.main'}
                               fontWeight="medium"
                             >
-                              {group.variancePercent >= 0 ? '+' : ''}{group.variancePercent.toFixed(1)}%
+                              {group.variancePercent.toFixed(1)}%
                             </Typography>
                           </TableCell>
                         </TableRow>
@@ -988,12 +994,12 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                         <Typography
                           variant="body2"
                           color={stratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0 &&
-                                 (stratifiedStats.sufficientTotals.totalAcvVariance / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100 >= 0 ?
+                                 (stratifiedStats.sufficientTotals.totalProjectedNetAcv / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100 >= 0 ?
                                  'success.main' : 'error.main'}
                           fontWeight="bold"
                         >
                           {stratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0 ?
-                            `${((stratifiedStats.sufficientTotals.totalAcvVariance / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100) >= 0 ? '+' : ''}${(((stratifiedStats.sufficientTotals.totalAcvVariance / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                            `${(((stratifiedStats.sufficientTotals.totalProjectedNetAcv / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
                             'N/A'}
                         </Typography>
                       </TableCell>
@@ -1060,7 +1066,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                       <TableCell align="right">
                         <Typography variant="body2" color="text.secondary" fontWeight="bold">
                           {stratifiedStats.insufficientTotals.totalOriginalNetAcv !== 0 ?
-                            `${(((stratifiedStats.insufficientTotals.totalAcvVariance / stratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                            `${(((stratifiedStats.insufficientTotals.totalProjectedNetAcv / stratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
                             'N/A'}
                         </Typography>
                       </TableCell>
@@ -1095,12 +1101,12 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                       <Typography
                         variant="body2"
                         color={displaySummary.totalOriginalNetAcv !== 0 &&
-                               (displaySummary.totalAcvVariance / displaySummary.totalOriginalNetAcv) * 100 >= 0 ?
+                               (displaySummary.totalProjectedNetAcv / displaySummary.totalOriginalNetAcv) * 100 >= 0 ?
                                'success.main' : 'error.main'}
                         fontWeight="bold"
                       >
                         {displaySummary.totalOriginalNetAcv !== 0 ?
-                          `${((displaySummary.totalAcvVariance / displaySummary.totalOriginalNetAcv) * 100) >= 0 ? '+' : ''}${(((displaySummary.totalAcvVariance / displaySummary.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                          `${(((displaySummary.totalProjectedNetAcv / displaySummary.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
                           'N/A'}
                       </Typography>
                     </TableCell>
@@ -1165,7 +1171,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                   <TableCell align="right">Original Net ACV</TableCell>
                   <TableCell align="right">Projected Net ACV</TableCell>
                   <TableCell align="right">ACV Variance</TableCell>
-                  <TableCell align="center">Variance %</TableCell>
+                  <TableCell align="center">% of Original</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1206,7 +1212,6 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                           label={formatPercent(row.acvVariancePercent)}
                           color={getVarianceColor(row.acvVariancePercent)}
                           size="small"
-                          icon={getVarianceIcon(row.acvVariancePercent) || undefined}
                         />
                         {!row.hasSufficientData && Math.abs(row.acvVariancePercent) < 0.1 && (
                           <Tooltip title="Variance is 0% due to insufficient performance data - using original projected values">

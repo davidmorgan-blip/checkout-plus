@@ -23,6 +23,7 @@ import {
   IconButton,
   FormControlLabel,
   Checkbox,
+  Switch,
   TextField,
   Autocomplete
 } from '@mui/material';
@@ -57,6 +58,7 @@ interface NetRevenueData {
   interactionContribution: number;
   implementationStatus: string;
   daysLive: number;
+  hasSufficientData: boolean;
 }
 
 interface NetRevenueAnalysisProps {}
@@ -105,6 +107,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const [adjustmentStatusFilter, setAdjustmentStatusFilter] = useState('all');
   const [revenueVarianceFilter, setRevenueVarianceFilter] = useState('all');
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
+  const [hideInsufficientData, setHideInsufficientData] = useState(true);
 
   // Filter data based on adjustment status, revenue variance, and merchant name
   const getFilteredData = () => {
@@ -134,6 +137,11 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
       filtered = filtered.filter(d => d.accountName === merchantFilter);
     }
 
+    // Apply hide insufficient data filter
+    if (hideInsufficientData) {
+      filtered = filtered.filter(d => d.hasSufficientData);
+    }
+
     return filtered;
   };
 
@@ -154,28 +162,52 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     return 'significantly_below';
   };
 
-  // Calculate counts for each status
+  // Calculate counts for each status (only apply base filters, not status/variance filters)
   const getStatusCounts = () => {
     if (!data) return { all: 0, adjusted: 0, pending: 0, notAdjusted: 0 };
 
+    let filtered = data;
+
+    // Apply merchant filter
+    if (merchantFilter) {
+      filtered = filtered.filter(d => d.accountName === merchantFilter);
+    }
+
+    // Apply hide insufficient data filter
+    if (hideInsufficientData) {
+      filtered = filtered.filter(d => d.hasSufficientData);
+    }
+
     return {
-      all: data.length,
-      adjusted: data.filter(d => d.adjustmentStatus === 'Adjusted').length,
-      pending: data.filter(d => d.adjustmentStatus.startsWith('Pending')).length,
-      notAdjusted: data.filter(d => d.adjustmentStatus === 'Not Adjusted').length
+      all: filtered.length,
+      adjusted: filtered.filter(d => d.adjustmentStatus === 'Adjusted').length,
+      pending: filtered.filter(d => d.adjustmentStatus.startsWith('Pending')).length,
+      notAdjusted: filtered.filter(d => d.adjustmentStatus === 'Not Adjusted').length
     };
   };
 
-  // Calculate counts for each revenue variance tier
+  // Calculate counts for each revenue variance tier (only apply base filters, not status/variance filters)
   const getRevenueVarianceCounts = () => {
     if (!data) return { all: 0, exceeding: 0, meeting: 0, below: 0, significantly_below: 0 };
 
+    let filtered = data;
+
+    // Apply merchant filter
+    if (merchantFilter) {
+      filtered = filtered.filter(d => d.accountName === merchantFilter);
+    }
+
+    // Apply hide insufficient data filter
+    if (hideInsufficientData) {
+      filtered = filtered.filter(d => d.hasSufficientData);
+    }
+
     return {
-      all: data.length,
-      exceeding: data.filter(d => getRevenueVarianceTier(d) === 'exceeding').length,
-      meeting: data.filter(d => getRevenueVarianceTier(d) === 'meeting').length,
-      below: data.filter(d => getRevenueVarianceTier(d) === 'below').length,
-      significantly_below: data.filter(d => getRevenueVarianceTier(d) === 'significantly_below').length
+      all: filtered.length,
+      exceeding: filtered.filter(d => getRevenueVarianceTier(d) === 'exceeding').length,
+      meeting: filtered.filter(d => getRevenueVarianceTier(d) === 'meeting').length,
+      below: filtered.filter(d => getRevenueVarianceTier(d) === 'below').length,
+      significantly_below: filtered.filter(d => getRevenueVarianceTier(d) === 'significantly_below').length
     };
   };
 
@@ -366,20 +398,33 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-          <FormControl sx={{ minWidth: 200 }}>
-            <InputLabel>Days Live Filter</InputLabel>
-            <Select
-              value={daysLiveFilter}
-              onChange={(e) => setDaysLiveFilter(e.target.value)}
-              label="Days Live Filter"
-            >
-              <MenuItem value="all">All Merchants</MenuItem>
-              <MenuItem value="under30">&lt;30 Days Live</MenuItem>
-              <MenuItem value="30">30+ Days Live</MenuItem>
-              <MenuItem value="60">60+ Days Live</MenuItem>
-              <MenuItem value="90">90+ Days Live</MenuItem>
-            </Select>
-          </FormControl>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <FormControl sx={{ minWidth: 200 }}>
+              <InputLabel>Days Live Filter</InputLabel>
+              <Select
+                value={daysLiveFilter}
+                onChange={(e) => setDaysLiveFilter(e.target.value)}
+                label="Days Live Filter"
+              >
+                <MenuItem value="all">All Merchants</MenuItem>
+                <MenuItem value="under30">&lt;30 Days Live</MenuItem>
+                <MenuItem value="30">30+ Days Live</MenuItem>
+                <MenuItem value="60">60+ Days Live</MenuItem>
+                <MenuItem value="90">90+ Days Live</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={hideInsufficientData}
+                  onChange={(e) => setHideInsufficientData(e.target.checked)}
+                  size="small"
+                />
+              }
+              label="Hide insufficient data merchants"
+              sx={{ ml: 0 }}
+            />
+          </Box>
           <Autocomplete
             sx={{ minWidth: 250 }}
             options={getMerchantOptions()}
