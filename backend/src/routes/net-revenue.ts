@@ -767,7 +767,15 @@ router.get('/acv-impacts', async (req, res) => {
         });
       });
 
-      if (weeklyPerformance.length >= 4) {
+      // For Flat pricing, performance data isn't needed for ACV calculation
+      let projectedAnnualVolume = 0;
+      let actualAdoptionRate = 0;
+
+      if (opportunity.pricing_model === 'Flat') {
+        // Use expected values for Flat pricing (no performance variance)
+        projectedAnnualVolume = opportunity.annual_order_volume;
+        actualAdoptionRate = opportunity.adoption_rate || 50;
+      } else if (weeklyPerformance.length >= 4) {
         // Calculate projected annual revenue using same logic as net revenue tab
         const vertical = opportunity.benchmark_vertical || 'Total ex. Swimwear';
         const seasonalityCurve = vertical === 'Swimwear' ? 'Swimwear' : 'Total ex. Swimwear';
@@ -788,11 +796,19 @@ router.get('/acv-impacts', async (req, res) => {
         const avgActualOrders = recentWeeks.reduce((sum, w) => sum + w.actual_weekly_orders, 0) / recentWeeks.length;
         const avgExpectedOrders = recentWeeks.reduce((sum, w) => sum + w.expected_weekly_orders, 0) / recentWeeks.length;
         const performanceRatio = avgExpectedOrders > 0 ? avgActualOrders / avgExpectedOrders : 1;
-        const projectedAnnualVolume = opportunity.annual_order_volume * performanceRatio;
-        const actualAdoptionRate = (recentWeeks.reduce((sum, w) => sum + w.weekly_adoption_rate, 0) / recentWeeks.length) * 100;
+        projectedAnnualVolume = opportunity.annual_order_volume * performanceRatio;
+        actualAdoptionRate = (recentWeeks.reduce((sum, w) => sum + w.weekly_adoption_rate, 0) / recentWeeks.length) * 100;
+      }
 
-        // Calculate projected annual revenue
-        const projectedRevenue = calculateActualRevenue({
+      // Calculate projected revenue and ACV impacts for ALL merchants
+      let projectedRevenue: number;
+      let hasSufficientData: boolean;
+
+      // Determine if we have sufficient data for projection
+      if (weeklyPerformance.length >= 4 || opportunity.pricing_model === 'Flat') {
+        hasSufficientData = true;
+        // Calculate projected annual revenue using performance data
+        projectedRevenue = calculateActualRevenue({
           pricingModel: opportunity.pricing_model,
           expectedAnnualRevenue: opportunity.est_offset_net_revenue,
           initial_offset_fee: opportunity.initial_offset_fee,
@@ -805,34 +821,39 @@ router.get('/acv-impacts', async (req, res) => {
           projected_annual_volume: projectedAnnualVolume,
           actual_adoption_rate: actualAdoptionRate
         });
-
-        // Calculate ACV impacts
-        const originalNetAcv = opportunity.net_acv || 0;
-        const startingAcv = opportunity.company_acv_starting_value || 0;
-        const originalEndingAcv = opportunity.company_acv_ending_value || opportunity.est_offset_net_revenue || 0;
-        const projectedEndingAcv = projectedRevenue;
-        const projectedNetAcv = projectedEndingAcv - startingAcv;
-        const acvVariance = projectedNetAcv - originalNetAcv;
-        const acvVariancePercent = originalNetAcv !== 0 ? (acvVariance / Math.abs(originalNetAcv)) * 100 : 0;
-
-        merchantData.push({
-          accountId: opportunity.accountId,
-          merchantName: opportunity.account_name,
-          pricingModel: opportunity.pricing_model,
-          labelsPaidBy: opportunity.labels_paid_by,
-          originalNetAcv,
-          startingAcv,
-          originalEndingAcv,
-          projectedEndingAcv,
-          projectedNetAcv,
-          acvVariance,
-          acvVariancePercent,
-          daysLive: Math.round(opportunity.daysLive || 0)
-        });
-
-        totalOriginalNetAcv += originalNetAcv;
-        totalProjectedNetAcv += projectedNetAcv;
+      } else {
+        hasSufficientData = false;
+        // Use original projected revenue for insufficient data
+        projectedRevenue = opportunity.est_offset_net_revenue || 0;
       }
+
+      // Calculate ACV impacts
+      const originalNetAcv = opportunity.net_acv || 0;
+      const startingAcv = opportunity.company_acv_starting_value || 0;
+      const originalEndingAcv = opportunity.company_acv_ending_value || opportunity.est_offset_net_revenue || 0;
+      const projectedEndingAcv = projectedRevenue;
+      const projectedNetAcv = projectedEndingAcv - startingAcv;
+      const acvVariance = projectedNetAcv - originalNetAcv;
+      const acvVariancePercent = originalNetAcv !== 0 ? (acvVariance / Math.abs(originalNetAcv)) * 100 : 0;
+
+      merchantData.push({
+        accountId: opportunity.accountId,
+        merchantName: opportunity.account_name,
+        pricingModel: opportunity.pricing_model,
+        labelsPaidBy: opportunity.labels_paid_by,
+        originalNetAcv,
+        startingAcv,
+        originalEndingAcv,
+        projectedEndingAcv,
+        projectedNetAcv,
+        acvVariance,
+        acvVariancePercent,
+        daysLive: Math.round(opportunity.daysLive || 0),
+        hasSufficientData
+      });
+
+      totalOriginalNetAcv += originalNetAcv;
+      totalProjectedNetAcv += projectedNetAcv;
     }
 
     // Calculate summary statistics

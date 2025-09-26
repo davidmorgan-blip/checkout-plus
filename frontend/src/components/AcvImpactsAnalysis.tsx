@@ -23,7 +23,9 @@ import {
   TextField,
   Autocomplete,
   Checkbox,
-  Link
+  Link,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -44,6 +46,7 @@ interface AcvImpactData {
   acvVariance: number;
   acvVariancePercent: number;
   daysLive: number;
+  hasSufficientData: boolean;
 }
 
 interface AcvSummaryData {
@@ -78,6 +81,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   const [pricingModelFilter, setPricingModelFilter] = useState('all');
   const [labelsPaidByFilter, setLabelsPaidByFilter] = useState('all');
   const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
+  const [hideInsufficientData, setHideInsufficientData] = useState(false);
 
   const fetchAcvData = async () => {
     try {
@@ -233,6 +237,11 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       return false;
     }
 
+    // Hide insufficient data filter
+    if (hideInsufficientData && !item.hasSufficientData) {
+      return false;
+    }
+
     return true;
   });
 
@@ -255,6 +264,125 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     });
     return counts;
   }, [acvData]);
+
+  // Calculate stratified statistics by Labels Paid By and Pricing Model
+  const stratifiedStats = React.useMemo(() => {
+    // Filter data based on current filters (but not excludedMerchants yet)
+    const filteredForStats = acvData.filter(item => {
+      // Variance filter
+      if (varianceFilter !== 'all' && getVarianceTier(item.acvVariancePercent) !== varianceFilter) {
+        return false;
+      }
+      // Pricing model filter
+      if (pricingModelFilter !== 'all' && item.pricingModel !== pricingModelFilter) {
+        return false;
+      }
+      // Labels paid by filter
+      if (labelsPaidByFilter !== 'all' && item.labelsPaidBy !== labelsPaidByFilter) {
+        return false;
+      }
+      // Hide insufficient data filter
+      if (hideInsufficientData && !item.hasSufficientData) {
+        return false;
+      }
+      return true;
+    });
+
+    // Further filter to exclude merchants
+    const includedData = filteredForStats.filter(item => !excludedMerchants.has(item.accountId));
+
+    // Split data by sufficient/insufficient
+    const sufficientData = includedData.filter(item => item.hasSufficientData);
+    const insufficientData = includedData.filter(item => !item.hasSufficientData);
+
+    // Group sufficient data by Labels Paid By and Pricing Model
+    const sufficientGroups: { [key: string]: AcvImpactData[] } = {};
+    sufficientData.forEach(item => {
+      const key = `${item.labelsPaidBy}|${item.pricingModel}`;
+      if (!sufficientGroups[key]) {
+        sufficientGroups[key] = [];
+      }
+      sufficientGroups[key].push(item);
+    });
+
+    // Group insufficient data by Labels Paid By and Pricing Model
+    const insufficientGroups: { [key: string]: AcvImpactData[] } = {};
+    insufficientData.forEach(item => {
+      const key = `${item.labelsPaidBy}|${item.pricingModel}`;
+      if (!insufficientGroups[key]) {
+        insufficientGroups[key] = [];
+      }
+      insufficientGroups[key].push(item);
+    });
+
+    // Calculate stats for sufficient data groups
+    const sufficientGroupStats = Object.entries(sufficientGroups).map(([key, items]) => {
+      const [labelsPaidBy, pricingModel] = key.split('|');
+      const totalOriginalNetAcv = items.reduce((sum, item) => sum + item.originalNetAcv, 0);
+      const totalProjectedNetAcv = items.reduce((sum, item) => sum + item.projectedNetAcv, 0);
+      const totalAcvVariance = totalProjectedNetAcv - totalOriginalNetAcv;
+      const avgAcvVariance = items.length > 0 ? totalAcvVariance / items.length : 0;
+
+      return {
+        labelsPaidBy,
+        pricingModel,
+        merchantCount: items.length,
+        totalOriginalNetAcv,
+        totalProjectedNetAcv,
+        totalAcvVariance,
+        avgAcvVariance,
+        variancePercent: totalOriginalNetAcv !== 0 ? (totalAcvVariance / totalOriginalNetAcv) * 100 : 0,
+        dataType: 'sufficient' as const
+      };
+    });
+
+    // Calculate stats for insufficient data groups
+    const insufficientGroupStats = Object.entries(insufficientGroups).map(([key, items]) => {
+      const [labelsPaidBy, pricingModel] = key.split('|');
+      const totalOriginalNetAcv = items.reduce((sum, item) => sum + item.originalNetAcv, 0);
+      const totalProjectedNetAcv = items.reduce((sum, item) => sum + item.projectedNetAcv, 0);
+      const totalAcvVariance = totalProjectedNetAcv - totalOriginalNetAcv; // Should be 0 for insufficient data
+      const avgAcvVariance = items.length > 0 ? totalAcvVariance / items.length : 0;
+
+      return {
+        labelsPaidBy,
+        pricingModel,
+        merchantCount: items.length,
+        totalOriginalNetAcv,
+        totalProjectedNetAcv,
+        totalAcvVariance,
+        avgAcvVariance,
+        variancePercent: totalOriginalNetAcv !== 0 ? (totalAcvVariance / totalOriginalNetAcv) * 100 : 0,
+        dataType: 'insufficient' as const
+      };
+    });
+
+    // Combine and sort by data type (sufficient first), then by total variance (descending)
+    const groupStats = [...sufficientGroupStats, ...insufficientGroupStats].sort((a, b) => {
+      if (a.dataType !== b.dataType) {
+        return a.dataType === 'sufficient' ? -1 : 1; // sufficient first
+      }
+      return b.totalAcvVariance - a.totalAcvVariance;
+    });
+
+    return {
+      groupStats,
+      sufficientData,
+      insufficientData,
+      sufficientTotals: {
+        merchantCount: sufficientData.length,
+        totalOriginalNetAcv: sufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0),
+        totalProjectedNetAcv: sufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0),
+        totalAcvVariance: sufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0) - sufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0)
+      },
+      insufficientTotals: {
+        merchantCount: insufficientData.length,
+        totalOriginalNetAcv: insufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0),
+        totalProjectedNetAcv: insufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0),
+        totalAcvVariance: insufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0) - insufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0)
+      }
+    };
+  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, hideInsufficientData]);
 
   if (loading) {
     return (
@@ -473,7 +601,266 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
           )}
           freeSolo
         />
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={hideInsufficientData}
+              onChange={(e) => setHideInsufficientData(e.target.checked)}
+              color="primary"
+            />
+          }
+          label="Hide insufficient data merchants"
+          sx={{
+            whiteSpace: 'nowrap',
+            '& .MuiFormControlLabel-label': { fontSize: '0.875rem' }
+          }}
+        />
       </Box>
+
+      {/* Stratified ACV Variance Summary */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            ACV Variance Summary by Pricing Model & Labels Paid By
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Subtotals showing ACV variance distribution across different merchant segments
+          </Typography>
+          <TableContainer component={Paper}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Labels Paid By</strong></TableCell>
+                  <TableCell><strong>Pricing Model</strong></TableCell>
+                  <TableCell align="right"><strong>Merchants</strong></TableCell>
+                  <TableCell align="right"><strong>Original Net ACV</strong></TableCell>
+                  <TableCell align="right"><strong>Projected Net ACV</strong></TableCell>
+                  <TableCell align="right"><strong>ACV Variance</strong></TableCell>
+                  <TableCell align="right"><strong>Variance %</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {/* Sufficient Data Groups */}
+                {stratifiedStats.groupStats.filter(group => group.dataType === 'sufficient').length > 0 && (
+                  <>
+                    <TableRow sx={{ backgroundColor: 'success.light', '& td': { fontWeight: 'bold', color: 'success.dark' } }}>
+                      <TableCell colSpan={7} align="center">
+                        <Typography variant="subtitle2" fontWeight="bold">
+                          SUFFICIENT DATA MERCHANTS (Updated Projections)
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                    {stratifiedStats.groupStats
+                      .filter(group => group.dataType === 'sufficient')
+                      .map((group, index) => (
+                        <TableRow
+                          key={`${group.labelsPaidBy}-${group.pricingModel}-sufficient`}
+                          sx={{
+                            backgroundColor: index % 2 === 0 ? 'action.hover' : 'inherit',
+                            '&:hover': { backgroundColor: 'action.selected' }
+                          }}
+                        >
+                          <TableCell>{group.labelsPaidBy}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={group.pricingModel}
+                              size="small"
+                              color={group.pricingModel === 'Flat' ? 'info' :
+                                     group.pricingModel === 'Rev Share' ? 'primary' : 'secondary'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell align="right">{group.merchantCount}</TableCell>
+                          <TableCell align="right">{formatCurrency(group.totalOriginalNetAcv)}</TableCell>
+                          <TableCell align="right">{formatCurrency(group.totalProjectedNetAcv)}</TableCell>
+                          <TableCell align="right">
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                              {group.totalAcvVariance >= 0 ? (
+                                <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                              ) : (
+                                <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                              )}
+                              <Typography
+                                variant="body2"
+                                color={group.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                                fontWeight="medium"
+                              >
+                                {formatCurrency(group.totalAcvVariance)}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography
+                              variant="body2"
+                              color={group.variancePercent >= 0 ? 'success.main' : 'error.main'}
+                              fontWeight="medium"
+                            >
+                              {group.variancePercent >= 0 ? '+' : ''}{group.variancePercent.toFixed(1)}%
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    {/* Sufficient Data Subtotal */}
+                    <TableRow sx={{ backgroundColor: 'success.light', '& td': { fontWeight: 'bold' } }}>
+                      <TableCell colSpan={2}><strong>SUFFICIENT DATA SUBTOTAL</strong></TableCell>
+                      <TableCell align="right">{stratifiedStats.sufficientTotals.merchantCount}</TableCell>
+                      <TableCell align="right">{formatCurrency(stratifiedStats.sufficientTotals.totalOriginalNetAcv)}</TableCell>
+                      <TableCell align="right">{formatCurrency(stratifiedStats.sufficientTotals.totalProjectedNetAcv)}</TableCell>
+                      <TableCell align="right">
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          {stratifiedStats.sufficientTotals.totalAcvVariance >= 0 ? (
+                            <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                          ) : (
+                            <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                          )}
+                          <Typography
+                            variant="body2"
+                            color={stratifiedStats.sufficientTotals.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                            fontWeight="bold"
+                          >
+                            {formatCurrency(stratifiedStats.sufficientTotals.totalAcvVariance)}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography
+                          variant="body2"
+                          color={stratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0 &&
+                                 (stratifiedStats.sufficientTotals.totalAcvVariance / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100 >= 0 ?
+                                 'success.main' : 'error.main'}
+                          fontWeight="bold"
+                        >
+                          {stratifiedStats.sufficientTotals.totalOriginalNetAcv !== 0 ?
+                            `${((stratifiedStats.sufficientTotals.totalAcvVariance / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100) >= 0 ? '+' : ''}${(((stratifiedStats.sufficientTotals.totalAcvVariance / stratifiedStats.sufficientTotals.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                            'N/A'}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  </>
+                )}
+
+                {/* Insufficient Data Groups */}
+                {stratifiedStats.groupStats.filter(group => group.dataType === 'insufficient').length > 0 && (
+                  <>
+                    <TableRow sx={{ backgroundColor: 'warning.light', '& td': { fontWeight: 'bold', color: 'warning.dark' } }}>
+                      <TableCell colSpan={7} align="center">
+                        <Typography variant="subtitle2" fontWeight="bold">
+                          INSUFFICIENT DATA MERCHANTS (Original Projections)
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                    {stratifiedStats.groupStats
+                      .filter(group => group.dataType === 'insufficient')
+                      .map((group, index) => (
+                        <TableRow
+                          key={`${group.labelsPaidBy}-${group.pricingModel}-insufficient`}
+                          sx={{
+                            backgroundColor: index % 2 === 0 ? 'action.hover' : 'inherit',
+                            '&:hover': { backgroundColor: 'action.selected' }
+                          }}
+                        >
+                          <TableCell>{group.labelsPaidBy}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={group.pricingModel}
+                              size="small"
+                              color={group.pricingModel === 'Flat' ? 'info' :
+                                     group.pricingModel === 'Rev Share' ? 'primary' : 'secondary'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell align="right">{group.merchantCount}</TableCell>
+                          <TableCell align="right">{formatCurrency(group.totalOriginalNetAcv)}</TableCell>
+                          <TableCell align="right">{formatCurrency(group.totalProjectedNetAcv)}</TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" color="text.secondary">
+                              {formatCurrency(group.totalAcvVariance)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" color="text.secondary">
+                              {group.variancePercent.toFixed(1)}%
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    {/* Insufficient Data Subtotal */}
+                    <TableRow sx={{ backgroundColor: 'warning.light', '& td': { fontWeight: 'bold' } }}>
+                      <TableCell colSpan={2}><strong>INSUFFICIENT DATA SUBTOTAL</strong></TableCell>
+                      <TableCell align="right">{stratifiedStats.insufficientTotals.merchantCount}</TableCell>
+                      <TableCell align="right">{formatCurrency(stratifiedStats.insufficientTotals.totalOriginalNetAcv)}</TableCell>
+                      <TableCell align="right">{formatCurrency(stratifiedStats.insufficientTotals.totalProjectedNetAcv)}</TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" color="text.secondary" fontWeight="bold">
+                          {formatCurrency(stratifiedStats.insufficientTotals.totalAcvVariance)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" color="text.secondary" fontWeight="bold">
+                          {stratifiedStats.insufficientTotals.totalOriginalNetAcv !== 0 ?
+                            `${(((stratifiedStats.insufficientTotals.totalAcvVariance / stratifiedStats.insufficientTotals.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                            'N/A'}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  </>
+                )}
+
+                {/* Grand Total Row */}
+                {(stratifiedStats.sufficientTotals.merchantCount > 0 || stratifiedStats.insufficientTotals.merchantCount > 0) && displaySummary && (
+                  <TableRow sx={{ backgroundColor: 'primary.light', '& td': { fontWeight: 'bold' } }}>
+                    <TableCell colSpan={2}><strong>GRAND TOTAL</strong></TableCell>
+                    <TableCell align="right">{displaySummary.totalMerchants}</TableCell>
+                    <TableCell align="right">{formatCurrency(displaySummary.totalOriginalNetAcv)}</TableCell>
+                    <TableCell align="right">{formatCurrency(displaySummary.totalProjectedNetAcv)}</TableCell>
+                    <TableCell align="right">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                        {displaySummary.totalAcvVariance >= 0 ? (
+                          <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                        ) : (
+                          <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                        )}
+                        <Typography
+                          variant="body2"
+                          color={displaySummary.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                          fontWeight="bold"
+                        >
+                          {formatCurrency(displaySummary.totalAcvVariance)}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={displaySummary.totalOriginalNetAcv !== 0 &&
+                               (displaySummary.totalAcvVariance / displaySummary.totalOriginalNetAcv) * 100 >= 0 ?
+                               'success.main' : 'error.main'}
+                        fontWeight="bold"
+                      >
+                        {displaySummary.totalOriginalNetAcv !== 0 ?
+                          `${((displaySummary.totalAcvVariance / displaySummary.totalOriginalNetAcv) * 100) >= 0 ? '+' : ''}${(((displaySummary.totalAcvVariance / displaySummary.totalOriginalNetAcv) * 100)).toFixed(1)}%` :
+                          'N/A'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {/* No Data Row */}
+                {stratifiedStats.groupStats.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No data available for current filters
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
 
       {/* Data Table */}
       <Card>
