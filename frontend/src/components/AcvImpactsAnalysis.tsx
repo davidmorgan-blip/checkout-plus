@@ -615,7 +615,45 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     );
   }
 
-  const displaySummary = adjustedSummary || summary;
+  // Calculate adjusted summary based on current filters including hideInsufficientData
+  const adjustedSummary = React.useMemo(() => {
+    // Use the same filteredAndIncludedData that's already being calculated
+    const dataForSummary = includedData; // This already includes hideInsufficientData filter
+
+    if (dataForSummary.length === 0) {
+      return {
+        totalMerchants: 0,
+        totalOriginalNetAcv: 0,
+        totalProjectedNetAcv: 0,
+        totalAcvVariance: 0,
+        avgAcvVariance: 0,
+        varianceCounts: { exceeding: 0, meeting: 0, below: 0, significantlyBelow: 0 }
+      };
+    }
+
+    const totalOriginalNetAcv = dataForSummary.reduce((sum, item) => sum + item.originalNetAcv, 0);
+    const totalProjectedNetAcv = dataForSummary.reduce((sum, item) => sum + item.projectedNetAcv, 0);
+    const totalAcvVariance = totalProjectedNetAcv - totalOriginalNetAcv;
+    const avgAcvVariance = dataForSummary.length > 0 ? totalAcvVariance / dataForSummary.length : 0;
+
+    const varianceCounts = {
+      exceeding: dataForSummary.filter(m => m.acvVariancePercent > 10).length,
+      meeting: dataForSummary.filter(m => m.acvVariancePercent >= -10 && m.acvVariancePercent <= 10).length,
+      below: dataForSummary.filter(m => m.acvVariancePercent < -10 && m.acvVariancePercent >= -30).length,
+      significantlyBelow: dataForSummary.filter(m => m.acvVariancePercent < -30).length
+    };
+
+    return {
+      totalMerchants: dataForSummary.length,
+      totalOriginalNetAcv,
+      totalProjectedNetAcv,
+      totalAcvVariance,
+      avgAcvVariance,
+      varianceCounts
+    };
+  }, [includedData]);
+
+  const displaySummary = adjustedSummary;
 
   return (
     <Box sx={{ p: 3 }}>
@@ -717,31 +755,31 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           <Chip
-            label={`All (${summary.totalMerchants})`}
+            label={`All (${displaySummary.totalMerchants})`}
             onClick={() => setVarianceFilter('all')}
             color={varianceFilter === 'all' ? 'primary' : 'default'}
             variant={varianceFilter === 'all' ? 'filled' : 'outlined'}
           />
           <Chip
-            label={`Exceeding >10% (${summary.varianceCounts.exceeding})`}
+            label={`Exceeding >10% (${displaySummary.varianceCounts.exceeding})`}
             onClick={() => setVarianceFilter('exceeding')}
             color={varianceFilter === 'exceeding' ? 'success' : 'default'}
             variant={varianceFilter === 'exceeding' ? 'filled' : 'outlined'}
           />
           <Chip
-            label={`Meeting ±10% (${summary.varianceCounts.meeting})`}
+            label={`Meeting ±10% (${displaySummary.varianceCounts.meeting})`}
             onClick={() => setVarianceFilter('meeting')}
             color={varianceFilter === 'meeting' ? 'primary' : 'default'}
             variant={varianceFilter === 'meeting' ? 'filled' : 'outlined'}
           />
           <Chip
-            label={`Below 10-30% (${summary.varianceCounts.below})`}
+            label={`Below 10-30% (${displaySummary.varianceCounts.below})`}
             onClick={() => setVarianceFilter('below')}
             color={varianceFilter === 'below' ? 'warning' : 'default'}
             variant={varianceFilter === 'below' ? 'filled' : 'outlined'}
           />
           <Chip
-            label={`Significantly Below >30% (${summary.varianceCounts.significantlyBelow})`}
+            label={`Significantly Below >30% (${displaySummary.varianceCounts.significantlyBelow})`}
             onClick={() => setVarianceFilter('significantlyBelow')}
             color={varianceFilter === 'significantlyBelow' ? 'error' : 'default'}
             variant={varianceFilter === 'significantlyBelow' ? 'filled' : 'outlined'}
