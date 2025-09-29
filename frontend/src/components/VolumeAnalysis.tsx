@@ -22,6 +22,8 @@ import {
   Tooltip,
   TextField,
   Autocomplete,
+  Checkbox,
+  Link
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -125,6 +127,7 @@ export default function VolumeAnalysis() {
   const [error, setError] = useState<string | null>(null);
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
   const [forecastTierFilter, setForecastTierFilter] = useState('all');
+  const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
 
   const fetchVolumeData = async () => {
     try {
@@ -188,7 +191,8 @@ export default function VolumeAnalysis() {
     const merchantsInWeeklyData = new Set(merchantData.map(m => m.merchant_name));
     const validForecasts = volumeData.forecasts.filter(forecast =>
       forecast.forecast_12month_orders !== null &&
-      merchantsInWeeklyData.has(forecast.merchant_name)
+      merchantsInWeeklyData.has(forecast.merchant_name) &&
+      !excludedMerchants.has(forecast.salesforce_account_id)
     );
 
     return {
@@ -292,8 +296,129 @@ export default function VolumeAnalysis() {
     );
   }
 
+  // Exclusion handlers
+  const handleExcludeToggle = (merchantId: string) => {
+    const newExcluded = new Set(excludedMerchants);
+    if (newExcluded.has(merchantId)) {
+      newExcluded.delete(merchantId);
+    } else {
+      newExcluded.add(merchantId);
+    }
+    setExcludedMerchants(newExcluded);
+  };
+
+  const handleSelectAll = () => {
+    const allMerchantIds = new Set(getMerchantWeeklyData().map(m => m.salesforce_account_id));
+    setExcludedMerchants(allMerchantIds);
+  };
+
+  const handleClearAll = () => {
+    setExcludedMerchants(new Set());
+  };
+
+  // Filter function for merchant data
+  const getMerchantWeeklyDataFiltered = () => {
+    return getMerchantWeeklyData().filter(merchant => !excludedMerchants.has(merchant.salesforce_account_id));
+  };
+
   const merchantData = getMerchantWeeklyData();
+  const filteredMerchantData = getMerchantWeeklyDataFiltered();
   const recentWeeks = getRecentWeeks();
+
+  // Calculate filtered summary metrics
+  const getFilteredSummaryMetrics = () => {
+    if (!volumeData || filteredMerchantData.length === 0) {
+      return {
+        currentWeekOrders: 0,
+        expectedWeekOrders: 0,
+        volumeVarianceOrders: 0,
+        volumeVariancePercentage: 0,
+        avgTrailing4WeekOrders: 0,
+        avgExpectedTrailing4WeekOrders: 0,
+        trailing4WeekVarianceOrders: 0,
+        trailing4WeekVariancePercentage: 0,
+        totalForecast12MonthOrders: 0,
+        totalOpportunityAnnualVolume: 0,
+        forecast12MonthVarianceOrders: 0,
+        forecast12MonthVariancePercentage: 0,
+        merchantCount: 0
+      };
+    }
+
+    const currentWeek = volumeData.summary.currentWeek;
+
+    // Calculate current week totals from filtered merchants
+    let currentWeekActual = 0;
+    let currentWeekExpected = 0;
+
+    filteredMerchantData.forEach(merchant => {
+      const weekData = merchant.weeks.get(currentWeek);
+      if (weekData) {
+        currentWeekActual += weekData.actual;
+        currentWeekExpected += weekData.expected;
+      }
+    });
+
+    // Calculate trailing 4-week averages from filtered merchants
+    const recentWeeks = getRecentWeeks();
+    const trailing4Weeks = recentWeeks.slice(-4); // Get last 4 weeks
+
+    let trailing4WeekTotalActual = 0;
+    let trailing4WeekTotalExpected = 0;
+    let weekCount = 0;
+
+    trailing4Weeks.forEach(week => {
+      let weekActual = 0;
+      let weekExpected = 0;
+
+      filteredMerchantData.forEach(merchant => {
+        const weekData = merchant.weeks.get(week);
+        if (weekData) {
+          weekActual += weekData.actual;
+          weekExpected += weekData.expected;
+        }
+      });
+
+      if (weekActual > 0 || weekExpected > 0) {
+        trailing4WeekTotalActual += weekActual;
+        trailing4WeekTotalExpected += weekExpected;
+        weekCount++;
+      }
+    });
+
+    const avgTrailing4WeekActual = weekCount > 0 ? trailing4WeekTotalActual / weekCount : 0;
+    const avgTrailing4WeekExpected = weekCount > 0 ? trailing4WeekTotalExpected / weekCount : 0;
+
+    // Calculate forecast totals from filtered merchants
+    const filteredMerchantAccountIds = new Set(filteredMerchantData.map(m => m.salesforce_account_id));
+    const filteredForecasts = volumeData.forecasts.filter(forecast =>
+      forecast.forecast_12month_orders !== null &&
+      filteredMerchantAccountIds.has(forecast.salesforce_account_id)
+    );
+
+    const totalForecast12Month = filteredForecasts.reduce((sum, f) => sum + (f.forecast_12month_orders || 0), 0);
+    const totalAnnualVolume = filteredForecasts.reduce((sum, f) => sum + f.annual_order_volume, 0);
+    const forecastVariance = totalForecast12Month - totalAnnualVolume;
+    const forecastVariancePercentage = totalAnnualVolume > 0 ? (forecastVariance / totalAnnualVolume) * 100 : 0;
+
+    return {
+      currentWeekOrders: currentWeekActual,
+      expectedWeekOrders: currentWeekExpected,
+      volumeVarianceOrders: currentWeekActual - currentWeekExpected,
+      volumeVariancePercentage: currentWeekExpected > 0 ? ((currentWeekActual - currentWeekExpected) / currentWeekExpected) * 100 : 0,
+      avgTrailing4WeekOrders: avgTrailing4WeekActual,
+      avgExpectedTrailing4WeekOrders: avgTrailing4WeekExpected,
+      trailing4WeekVarianceOrders: avgTrailing4WeekActual - avgTrailing4WeekExpected,
+      trailing4WeekVariancePercentage: avgTrailing4WeekExpected > 0 ? ((avgTrailing4WeekActual - avgTrailing4WeekExpected) / avgTrailing4WeekExpected) * 100 : 0,
+      totalForecast12MonthOrders: totalForecast12Month,
+      totalOpportunityAnnualVolume: totalAnnualVolume,
+      forecast12MonthVarianceOrders: forecastVariance,
+      forecast12MonthVariancePercentage: forecastVariancePercentage,
+      merchantCount: filteredMerchantData.length
+    };
+  };
+
+  const filteredSummary = getFilteredSummaryMetrics();
 
   return (
     <Box>
@@ -347,13 +472,18 @@ export default function VolumeAnalysis() {
                   Week {volumeData.summary.currentWeek} Total Orders
                 </Typography>
                 <Typography variant="h4">
-                  {volumeData.summary.currentWeekOrders.toLocaleString()} ({volumeData.summary.volumeVariancePercentage >= 0 ? '+' : ''}{volumeData.summary.volumeVariancePercentage.toFixed(1)}%)
+                  {Math.round(filteredSummary.currentWeekOrders).toLocaleString()} ({filteredSummary.volumeVariancePercentage >= 0 ? '+' : ''}{filteredSummary.volumeVariancePercentage.toFixed(1)}%)
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
-                  Expected: {volumeData.summary.expectedWeekOrders.toLocaleString()}
+                  Expected: {Math.round(filteredSummary.expectedWeekOrders).toLocaleString()}
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.25 }}>
-                  Merchant Count: {volumeData.summary.merchantCount}
+                  Merchant Count: {filteredMerchantData.length}
+                  {excludedMerchants.size > 0 && (
+                    <span style={{ marginLeft: '4px', color: 'rgba(0, 0, 0, 0.6)' }}>
+                      ({excludedMerchants.size} excluded)
+                    </span>
+                  )}
                 </Typography>
               </Box>
               <BusinessIcon color="primary" sx={{ fontSize: 40 }} />
@@ -369,13 +499,18 @@ export default function VolumeAnalysis() {
                   Trailing 4-Week Avg
                 </Typography>
                 <Typography variant="h4">
-                  {volumeData.summary.avgTrailing4WeekOrders.toLocaleString()} ({volumeData.summary.trailing4WeekVariancePercentage >= 0 ? '+' : ''}{volumeData.summary.trailing4WeekVariancePercentage.toFixed(1)}%)
+                  {Math.round(filteredSummary.avgTrailing4WeekOrders).toLocaleString()} ({filteredSummary.trailing4WeekVariancePercentage >= 0 ? '+' : ''}{filteredSummary.trailing4WeekVariancePercentage.toFixed(1)}%)
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
-                  Expected: {volumeData.summary.avgExpectedTrailing4WeekOrders.toLocaleString()}
+                  Expected: {Math.round(filteredSummary.avgExpectedTrailing4WeekOrders).toLocaleString()}
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.25 }}>
-                  Merchant Count: {volumeData.summary.merchantCount}
+                  Merchant Count: {filteredMerchantData.length}
+                  {excludedMerchants.size > 0 && (
+                    <span style={{ marginLeft: '4px', color: 'rgba(0, 0, 0, 0.6)' }}>
+                      ({excludedMerchants.size} excluded)
+                    </span>
+                  )}
                 </Typography>
               </Box>
               <AssessmentIcon color="secondary" sx={{ fontSize: 40 }} />
@@ -391,13 +526,18 @@ export default function VolumeAnalysis() {
                   12-Month Forecast
                 </Typography>
                 <Typography variant="h4">
-                  {volumeData.summary.totalForecast12MonthOrders.toLocaleString()} ({volumeData.summary.forecast12MonthVariancePercentage >= 0 ? '+' : ''}{volumeData.summary.forecast12MonthVariancePercentage.toFixed(1)}%)
+                  {Math.round(filteredSummary.totalForecast12MonthOrders).toLocaleString()} ({filteredSummary.forecast12MonthVariancePercentage >= 0 ? '+' : ''}{filteredSummary.forecast12MonthVariancePercentage.toFixed(1)}%)
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
-                  Expected: {volumeData.summary.totalOpportunityAnnualVolume.toLocaleString()}
+                  Expected: {Math.round(filteredSummary.totalOpportunityAnnualVolume).toLocaleString()}
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.25 }}>
-                  Forecasts: {volumeData.forecasts.length} of {volumeData.summary.merchantCount}
+                  Forecasts: {volumeData.forecasts.filter(f => f.forecast_12month_orders !== null && !excludedMerchants.has(f.salesforce_account_id)).length} of {filteredMerchantData.length}
+                  {excludedMerchants.size > 0 && (
+                    <span style={{ marginLeft: '4px', color: 'rgba(0, 0, 0, 0.6)' }}>
+                      ({excludedMerchants.size} excluded)
+                    </span>
+                  )}
                 </Typography>
               </Box>
               <TimelineIcon color="info" sx={{ fontSize: 40 }} />
@@ -408,13 +548,46 @@ export default function VolumeAnalysis() {
 
       {/* Weekly Trends Table */}
       <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" gutterBottom>
-          Weekly Order Volume Trends
-        </Typography>
+        <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+            Weekly Order Volume Trends
+          </Typography>
+          {excludedMerchants.size > 0 && (
+            <Box display="flex" alignItems="center" gap={1}>
+              <Typography variant="body2" color="text.secondary">
+                {excludedMerchants.size} merchant{excludedMerchants.size !== 1 ? 's' : ''} excluded
+              </Typography>
+            </Box>
+          )}
+        </Box>
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox" sx={{ width: '60px' }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption">Exclude</Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Link
+                        component="button"
+                        variant="caption"
+                        onClick={handleSelectAll}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        All
+                      </Link>
+                      <Typography variant="caption">|</Typography>
+                      <Link
+                        component="button"
+                        variant="caption"
+                        onClick={handleClearAll}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        None
+                      </Link>
+                    </Box>
+                  </Box>
+                </TableCell>
                 <TableCell>Merchant</TableCell>
                 <TableCell align="right">Days Live</TableCell>
                 {recentWeeks.map(week => (
@@ -432,9 +605,12 @@ export default function VolumeAnalysis() {
             <TableBody>
               {/* Total Row */}
               <TableRow sx={{ backgroundColor: 'grey.100', '& .MuiTableCell-root': { fontWeight: 'bold' } }}>
+                <TableCell padding="checkbox">
+                  {/* Empty checkbox column for total row */}
+                </TableCell>
                 <TableCell component="th" scope="row">
                   <Typography variant="body2" fontWeight="bold" color="text.primary">
-                    TOTAL ({volumeData.summary.merchantCount} merchants)
+                    TOTAL ({filteredMerchantData.length} merchants{excludedMerchants.size > 0 ? `, ${excludedMerchants.size} excluded` : ''})
                   </Typography>
                 </TableCell>
                 <TableCell align="right">
@@ -443,24 +619,24 @@ export default function VolumeAnalysis() {
                   </Typography>
                 </TableCell>
                 {recentWeeks.map(week => {
-                  // Calculate totals for this week across all merchants
-                  const totalActual = merchantData.reduce((sum, merchant) => {
+                  // Calculate totals for this week across filtered merchants only
+                  const totalActual = filteredMerchantData.reduce((sum, merchant) => {
                     const weekData = merchant.weeks.get(week);
                     return sum + (weekData ? weekData.actual : 0);
                   }, 0);
 
-                  const totalExpected = merchantData.reduce((sum, merchant) => {
+                  const totalExpected = filteredMerchantData.reduce((sum, merchant) => {
                     const weekData = merchant.weeks.get(week);
                     return sum + (weekData ? weekData.expected : 0);
                   }, 0);
 
                   const totalVariance = totalActual - totalExpected;
 
-                  // Calculate weighted average adoption rate
+                  // Calculate weighted average adoption rate for filtered merchants
                   let totalOrdersWithAdoption = 0;
                   let weightedAdoptionSum = 0;
 
-                  merchantData.forEach(merchant => {
+                  filteredMerchantData.forEach(merchant => {
                     const weekData = merchant.weeks.get(week);
                     if (weekData && weekData.actual > 0) {
                       totalOrdersWithAdoption += weekData.actual;
@@ -496,8 +672,18 @@ export default function VolumeAnalysis() {
               {merchantData.map((merchant) => (
                 <TableRow
                   key={merchant.merchant_name}
-                  sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                  sx={{
+                    '&:last-child td, &:last-child th': { border: 0 },
+                    backgroundColor: excludedMerchants.has(merchant.salesforce_account_id) ? 'rgba(255, 193, 7, 0.1)' : 'inherit'
+                  }}
                 >
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      size="small"
+                      checked={excludedMerchants.has(merchant.salesforce_account_id)}
+                      onChange={() => handleExcludeToggle(merchant.salesforce_account_id)}
+                    />
+                  </TableCell>
                   <TableCell component="th" scope="row">
                     {renderMerchantWithLinks(
                       merchant.merchant_name,
@@ -625,10 +811,16 @@ export default function VolumeAnalysis() {
             <TableBody>
               {(() => {
                 const merchantData = getMerchantWeeklyData();
+                const filteredMerchantData = getMerchantWeeklyDataFiltered();
                 const merchantsInWeeklyData = new Set(merchantData.map(m => m.merchant_name));
                 const filteredForecasts = volumeData.forecasts.filter(forecast => {
                   const hasValidForecast = forecast.forecast_12month_orders !== null && merchantsInWeeklyData.has(forecast.merchant_name);
                   if (!hasValidForecast) return false;
+
+                  // Apply exclusion filter
+                  if (excludedMerchants.has(forecast.salesforce_account_id)) {
+                    return false;
+                  }
 
                   // Apply merchant filter
                   if (merchantFilter) {
@@ -661,7 +853,7 @@ export default function VolumeAnalysis() {
                     <TableRow sx={{ backgroundColor: 'grey.100', '& .MuiTableCell-root': { fontWeight: 'bold' } }}>
                       <TableCell component="th" scope="row">
                         <Typography variant="body2" fontWeight="bold" color="text.primary">
-                          TOTAL ({merchantCount} merchants)
+                          TOTAL ({merchantCount} merchants{excludedMerchants.size > 0 ? `, ${excludedMerchants.size} excluded` : ''})
                         </Typography>
                       </TableCell>
                       <TableCell align="right">

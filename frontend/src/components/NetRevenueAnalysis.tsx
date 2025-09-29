@@ -835,7 +835,13 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                 {Array.isArray(data) ? getFilteredData()
                   .sort((a, b) => Math.abs((b.revenueVariance || 0)) - Math.abs((a.revenueVariance || 0)))
                   .map((row) => (
-                    <TableRow key={row.accountId} hover>
+                    <TableRow
+                      key={row.accountId}
+                      hover
+                      sx={{
+                        backgroundColor: excludedMerchants.has(row.accountId) ? 'rgba(255, 193, 7, 0.1)' : 'inherit'
+                      }}
+                    >
                       <TableCell padding="checkbox">
                         <Checkbox
                           checked={excludedMerchants.has(row.accountId)}

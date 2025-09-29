@@ -377,7 +377,18 @@ router.get('/merchants', async (req, res) => {
             AND p2.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
         ) as trailing_4week_ecom_orders
       FROM opportunities o
-      LEFT JOIN performance_actuals p ON o.account_casesafe_id = p.salesforce_account_id
+      LEFT JOIN (
+        SELECT DISTINCT
+          salesforce_account_id,
+          iso_week,
+          first_offer_date,
+          SUM(ecomm_orders) as ecomm_orders,
+          SUM(accepted_offers) as accepted_offers,
+          SUM(offer_shown) as offer_shown,
+          AVG(attach_rate_avg) as attach_rate_avg
+        FROM performance_actuals
+        GROUP BY salesforce_account_id, iso_week
+      ) p ON o.account_casesafe_id = p.salesforce_account_id
         AND p.iso_week = (SELECT MAX(p2.iso_week) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id)
       WHERE o.checkout_enabled = 'Yes'
         AND o.annual_order_volume > 0

@@ -23,6 +23,8 @@ import {
   Tooltip,
   TextField,
   Autocomplete,
+  Checkbox,
+  Link,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -131,6 +133,8 @@ export default function PerformanceOverview() {
   const [performanceTierFilter, setPerformanceTierFilter] = useState('all');
   const [error, setError] = useState<string | null>(null);
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
+  const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
+  const [allMerchantData, setAllMerchantData] = useState<MerchantData[]>([]);
 
   const fetchOverviewData = async () => {
     try {
@@ -153,6 +157,26 @@ export default function PerformanceOverview() {
     }
   };
 
+  const fetchAllMerchantData = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (daysLiveFilter !== 'all') {
+        params.append('daysLive', daysLiveFilter);
+      }
+      // Don't apply performance tier or merchant name filters for summary data
+      params.append('limit', '1000');
+
+      const response = await fetch(`http://localhost:3001/api/analytics/merchants?${params}`);
+      const result = await response.json();
+
+      if (result.success) {
+        setAllMerchantData(result.data);
+      }
+    } catch (err) {
+      console.error('All merchant fetch error:', err);
+    }
+  };
+
   const fetchMerchantData = async () => {
     try {
       const params = new URLSearchParams();
@@ -165,6 +189,8 @@ export default function PerformanceOverview() {
       if (merchantFilter) {
         params.append('merchant', merchantFilter);
       }
+      // Set a high limit to get all merchants
+      params.append('limit', '1000');
 
       const response = await fetch(`http://localhost:3001/api/analytics/merchants?${params}`);
       const result = await response.json();
@@ -184,7 +210,7 @@ export default function PerformanceOverview() {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
-      await Promise.all([fetchOverviewData(), fetchMerchantData()]);
+      await Promise.all([fetchOverviewData(), fetchMerchantData(), fetchAllMerchantData()]);
       setLoading(false);
     };
 
@@ -199,8 +225,143 @@ export default function PerformanceOverview() {
   };
 
   // Since filtering is now done server-side, just return the merchant data
+  // Exclusion handlers
+  const handleExcludeToggle = (merchantId: string) => {
+    const newExcluded = new Set(excludedMerchants);
+    if (newExcluded.has(merchantId)) {
+      newExcluded.delete(merchantId);
+    } else {
+      newExcluded.add(merchantId);
+    }
+    setExcludedMerchants(newExcluded);
+  };
+
+  const handleSelectAll = () => {
+    const allMerchantIds = new Set(getFilteredMerchantData().map(m => m.salesforce_account_id));
+    setExcludedMerchants(allMerchantIds);
+  };
+
+  const handleClearAll = () => {
+    setExcludedMerchants(new Set());
+  };
+
   const getFilteredMerchantData = () => {
-    return merchantData || [];
+    let filtered = merchantData || [];
+
+    // Apply merchant filter
+    if (merchantFilter) {
+      filtered = filtered.filter(m => m.merchant_name === merchantFilter);
+    }
+
+    // Apply performance tier filter
+    if (performanceTierFilter !== 'all') {
+      filtered = filtered.filter(m => m.performance_tier === performanceTierFilter);
+    }
+
+    return filtered;
+  };
+
+  const getFilteredAndIncludedMerchantData = () => {
+    return getFilteredMerchantData().filter(m => !excludedMerchants.has(m.salesforce_account_id));
+  };
+
+  // Calculate filtered summary metrics (only apply exclusions, not UI filters)
+  const getFilteredSummaryMetrics = () => {
+    // Get all merchant data regardless of UI filters, but excluding explicitly excluded merchants
+    const filteredData = allMerchantData.filter(m => !excludedMerchants.has(m.salesforce_account_id));
+
+    if (!filteredData || filteredData.length === 0) {
+      return {
+        totalMerchants: 0,
+        avgAdoptionRate: 0,
+        avgEligibilityRate: 0,
+        avgAttachRate: 0,
+        trailing4WeekAdoptionRate: 0,
+        trailing4WeekEligibilityRate: 0,
+        trailing4WeekAttachRate: 0,
+        volumeWeightedAdoptionRate: 0,
+        volumeWeightedEligibilityRate: 0,
+        volumeWeightedAttachRate: 0,
+        trailing4WeekVolumeWeightedAdoptionRate: 0,
+        trailing4WeekVolumeWeightedEligibilityRate: 0,
+        trailing4WeekVolumeWeightedAttachRate: 0
+      };
+    }
+
+    const merchantCount = filteredData.length;
+
+    // Calculate simple averages
+    const avgAdoptionRate = filteredData.reduce((sum, m) => sum + m.current_adoption_rate, 0) / merchantCount;
+    const avgEligibilityRate = filteredData.reduce((sum, m) => sum + m.current_eligibility_rate, 0) / merchantCount;
+    const avgAttachRate = filteredData.reduce((sum, m) => sum + m.attach_rate, 0) / merchantCount;
+
+    // Calculate trailing 4-week simple averages (filter out null values)
+    const merchantsWithTrailing = filteredData.filter(m => m.trailing_4week_adoption_rate !== null);
+    const trailing4WeekAdoptionRate = merchantsWithTrailing.length > 0
+      ? merchantsWithTrailing.reduce((sum, m) => sum + (m.trailing_4week_adoption_rate || 0), 0) / merchantsWithTrailing.length
+      : 0;
+
+    const merchantsWithTrailingElig = filteredData.filter(m => m.trailing_4week_eligibility_rate !== null);
+    const trailing4WeekEligibilityRate = merchantsWithTrailingElig.length > 0
+      ? merchantsWithTrailingElig.reduce((sum, m) => sum + (m.trailing_4week_eligibility_rate || 0), 0) / merchantsWithTrailingElig.length
+      : 0;
+
+    const trailing4WeekAttachRate = avgAttachRate; // Attach rate doesn't have trailing data
+
+    // Calculate volume-weighted averages
+    const totalOrders = filteredData.reduce((sum, m) => sum + m.current_ecom_orders, 0);
+    const volumeWeightedAdoptionRate = totalOrders > 0
+      ? filteredData.reduce((sum, m) => sum + (m.current_adoption_rate * m.current_ecom_orders), 0) / totalOrders
+      : 0;
+    const volumeWeightedEligibilityRate = totalOrders > 0
+      ? filteredData.reduce((sum, m) => sum + (m.current_eligibility_rate * m.current_ecom_orders), 0) / totalOrders
+      : 0;
+    const volumeWeightedAttachRate = totalOrders > 0
+      ? filteredData.reduce((sum, m) => sum + (m.attach_rate * m.current_ecom_orders), 0) / totalOrders
+      : 0;
+
+    // Calculate trailing 4-week volume-weighted averages
+    const totalTrailingOrders = filteredData
+      .filter(m => m.trailing_4week_ecom_orders !== null)
+      .reduce((sum, m) => sum + (m.trailing_4week_ecom_orders || 0), 0);
+
+    const merchantsWithTrailingOrders = filteredData.filter(m =>
+      m.trailing_4week_adoption_rate !== null && m.trailing_4week_ecom_orders !== null
+    );
+    const trailing4WeekVolumeWeightedAdoptionRate = totalTrailingOrders > 0
+      ? merchantsWithTrailingOrders.reduce((sum, m) =>
+          sum + ((m.trailing_4week_adoption_rate || 0) * (m.trailing_4week_ecom_orders || 0)), 0) / totalTrailingOrders
+      : 0;
+
+    const merchantsWithTrailingEligOrders = filteredData.filter(m =>
+      m.trailing_4week_eligibility_rate !== null && m.trailing_4week_ecom_orders !== null
+    );
+    const trailing4WeekVolumeWeightedEligibilityRate = totalTrailingOrders > 0
+      ? merchantsWithTrailingEligOrders.reduce((sum, m) =>
+          sum + ((m.trailing_4week_eligibility_rate || 0) * (m.trailing_4week_ecom_orders || 0)), 0) / totalTrailingOrders
+      : 0;
+
+    const trailing4WeekVolumeWeightedAttachRate = totalTrailingOrders > 0
+      ? filteredData
+          .filter(m => m.trailing_4week_ecom_orders !== null)
+          .reduce((sum, m) => sum + (m.attach_rate * (m.trailing_4week_ecom_orders || 0)), 0) / totalTrailingOrders
+      : 0;
+
+    return {
+      totalMerchants: merchantCount,
+      avgAdoptionRate,
+      avgEligibilityRate,
+      avgAttachRate,
+      trailing4WeekAdoptionRate,
+      trailing4WeekEligibilityRate,
+      trailing4WeekAttachRate,
+      volumeWeightedAdoptionRate,
+      volumeWeightedEligibilityRate,
+      volumeWeightedAttachRate,
+      trailing4WeekVolumeWeightedAdoptionRate,
+      trailing4WeekVolumeWeightedEligibilityRate,
+      trailing4WeekVolumeWeightedAttachRate
+    };
   };
 
   const getPerformanceTierColor = (tier: string) => {
@@ -260,6 +421,13 @@ export default function PerformanceOverview() {
     );
   }
 
+  // Get filtered metrics that respect exclusions
+  const filteredMetrics = getFilteredSummaryMetrics();
+
+  // For chips, use server data. For summary tiles, use filtered metrics
+  const totalMerchantsFromServer = overviewData.metrics.totalMerchants;
+  const excludedCount = excludedMerchants.size;
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
@@ -312,7 +480,12 @@ export default function PerformanceOverview() {
                   Total Merchants
                 </Typography>
                 <Typography variant="h4">
-                  {overviewData.metrics.totalMerchants}
+                  {totalMerchantsFromServer - excludedCount}
+                  {excludedCount > 0 && (
+                    <span style={{ marginLeft: '4px', color: 'rgba(0, 0, 0, 0.6)', fontSize: '0.7em' }}>
+                      ({excludedCount} excluded)
+                    </span>
+                  )}
                 </Typography>
               </Box>
               <BusinessIcon color="primary" sx={{ fontSize: 40 }} />
@@ -328,13 +501,13 @@ export default function PerformanceOverview() {
                   Avg Adoption Rate (Current Week)
                 </Typography>
                 <Typography variant="h4">
-                  {(overviewData.metrics.avgAdoptionRate * 100).toFixed(1)}%
+                  {(filteredMetrics.avgAdoptionRate * 100).toFixed(1)}%
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
-                  T4Wk: {(overviewData.metrics.trailing4WeekAdoptionRate * 100).toFixed(1)}%
+                  T4Wk: {(filteredMetrics.trailing4WeekAdoptionRate * 100).toFixed(1)}%
                 </Typography>
                 <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.2, fontSize: '0.65rem' }}>
-                  Vol-weighted: {(overviewData.metrics.volumeWeightedAdoptionRate * 100).toFixed(1)}% | T4Wk: {(overviewData.metrics.trailing4WeekVolumeWeightedAdoptionRate * 100).toFixed(1)}%
+                  Vol-weighted: {(filteredMetrics.volumeWeightedAdoptionRate * 100).toFixed(1)}% | T4Wk: {(filteredMetrics.trailing4WeekVolumeWeightedAdoptionRate * 100).toFixed(1)}%
                 </Typography>
               </Box>
               <TrendingUpIcon color="success" sx={{ fontSize: 40 }} />
@@ -351,13 +524,13 @@ export default function PerformanceOverview() {
                   Avg Eligibility Rate (Current Week)
                 </Typography>
                 <Typography variant="h4">
-                  {(overviewData.metrics.avgEligibilityRate * 100).toFixed(1)}%
+                  {(filteredMetrics.avgEligibilityRate * 100).toFixed(1)}%
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
-                  T4Wk: {(overviewData.metrics.trailing4WeekEligibilityRate * 100).toFixed(1)}%
+                  T4Wk: {(filteredMetrics.trailing4WeekEligibilityRate * 100).toFixed(1)}%
                 </Typography>
                 <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.2, fontSize: '0.65rem' }}>
-                  Vol-weighted: {(overviewData.metrics.volumeWeightedEligibilityRate * 100).toFixed(1)}% | T4Wk: {(overviewData.metrics.trailing4WeekVolumeWeightedEligibilityRate * 100).toFixed(1)}%
+                  Vol-weighted: {(filteredMetrics.volumeWeightedEligibilityRate * 100).toFixed(1)}% | T4Wk: {(filteredMetrics.trailing4WeekVolumeWeightedEligibilityRate * 100).toFixed(1)}%
                 </Typography>
               </Box>
               <CheckCircleIcon color="secondary" sx={{ fontSize: 40 }} />
@@ -373,7 +546,7 @@ export default function PerformanceOverview() {
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <Chip
-            label={`All: ${overviewData.metrics.totalMerchants}`}
+            label={`All: ${totalMerchantsFromServer}`}
             color="primary"
             variant={performanceTierFilter === 'all' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('all')}
@@ -412,13 +585,46 @@ export default function PerformanceOverview() {
 
       {/* Top Merchants Table */}
       <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" gutterBottom>
-          Merchant Performance {performanceTierFilter !== 'all' ? `(${getPerformanceTierLabel(performanceTierFilter)})` : ''}
-        </Typography>
+        <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+            Merchant Performance {performanceTierFilter !== 'all' ? `(${getPerformanceTierLabel(performanceTierFilter)})` : ''}
+          </Typography>
+          {excludedMerchants.size > 0 && (
+            <Box display="flex" alignItems="center" gap={1}>
+              <Typography variant="body2" color="text.secondary">
+                {excludedMerchants.size} merchant{excludedMerchants.size !== 1 ? 's' : ''} excluded
+              </Typography>
+            </Box>
+          )}
+        </Box>
         <TableContainer>
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox" sx={{ width: '60px' }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption">Exclude</Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Link
+                        component="button"
+                        variant="caption"
+                        onClick={handleSelectAll}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        All
+                      </Link>
+                      <Typography variant="caption">|</Typography>
+                      <Link
+                        component="button"
+                        variant="caption"
+                        onClick={handleClearAll}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        None
+                      </Link>
+                    </Box>
+                  </Box>
+                </TableCell>
                 <TableCell>Merchant</TableCell>
                 <TableCell align="right">Days Live</TableCell>
                 <TableCell align="right">Trailing 4-Week Orders</TableCell>
@@ -437,8 +643,18 @@ export default function PerformanceOverview() {
               {getFilteredMerchantData().map((merchant) => (
                 <TableRow
                   key={merchant.salesforce_account_id}
-                  sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                  sx={{
+                    '&:last-child td, &:last-child th': { border: 0 },
+                    backgroundColor: excludedMerchants.has(merchant.salesforce_account_id) ? 'rgba(255, 193, 7, 0.1)' : 'inherit'
+                  }}
                 >
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      size="small"
+                      checked={excludedMerchants.has(merchant.salesforce_account_id)}
+                      onChange={() => handleExcludeToggle(merchant.salesforce_account_id)}
+                    />
+                  </TableCell>
                   <TableCell component="th" scope="row">
                     {renderMerchantWithLinks(
                       merchant.merchant_name,
