@@ -380,6 +380,17 @@ router.get('/net-revenue/export', async (req, res) => {
     const daysLiveFilter = req.query.daysLive as string || 'all';
     const necessaryChangesOnly = req.query.necessaryChangesOnly === 'true';
 
+    // Parse excluded merchants from query parameters
+    const excludedMerchants = new Set<string>();
+    const excludedParam = req.query.excludedMerchants;
+    if (excludedParam) {
+      if (Array.isArray(excludedParam)) {
+        excludedParam.forEach(id => excludedMerchants.add(id as string));
+      } else {
+        excludedMerchants.add(excludedParam as string);
+      }
+    }
+
     // Get opportunities with their expected revenue (same query as main endpoint)
     let opportunitiesQuery = `
       SELECT
@@ -598,7 +609,10 @@ router.get('/net-revenue/export', async (req, res) => {
       merchantData['Projected Annual Revenue'] = Math.round(actualRevenue);
       merchantData['Revenue Variance'] = Math.round(revenueVariance);
 
-      csvData.push(merchantData);
+      // Only include merchant if not excluded
+      if (!excludedMerchants.has(opportunity.accountId)) {
+        csvData.push(merchantData);
+      }
     }
 
     // Convert to CSV format
@@ -863,6 +877,7 @@ router.get('/acv-impacts', async (req, res) => {
 
       merchantData.push({
         accountId: opportunity.accountId,
+        opportunityId: opportunity.opportunityId,
         merchantName: opportunity.account_name,
         pricingModel: opportunity.pricing_model,
         labelsPaidBy: opportunity.labels_paid_by,

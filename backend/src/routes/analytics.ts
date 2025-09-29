@@ -14,10 +14,16 @@ interface PerformanceMetrics {
   avgAdoptionRate: number;
   avgEligibilityRate: number;
   avgAttachRate: number;
+  volumeWeightedAdoptionRate: number;
+  volumeWeightedEligibilityRate: number;
+  volumeWeightedAttachRate: number;
   weekOverWeekChange: number;
   trailing4WeekAdoptionRate: number;
   trailing4WeekEligibilityRate: number;
   trailing4WeekAttachRate: number;
+  trailing4WeekVolumeWeightedAdoptionRate: number;
+  trailing4WeekVolumeWeightedEligibilityRate: number;
+  trailing4WeekVolumeWeightedAttachRate: number;
 }
 
 interface MerchantPerformance {
@@ -173,21 +179,75 @@ router.get('/overview', async (req, res) => {
       });
     });
 
+    // Calculate simple averages by merchant (not volume-weighted)
+    const merchantsWithData = merchantData.filter((m: any) => m.ecomm_orders > 0);
+    const simpleAvgAdoptionRate = merchantsWithData.length > 0 ?
+      merchantsWithData.reduce((sum: number, m: any) => sum + m.current_adoption_rate, 0) / merchantsWithData.length : 0;
+    const simpleAvgEligibilityRate = merchantsWithData.length > 0 ?
+      merchantsWithData.reduce((sum: number, m: any) => sum + m.current_eligibility_rate, 0) / merchantsWithData.length : 0;
+    const simpleAvgAttachRate = merchantsWithData.length > 0 ?
+      merchantsWithData.reduce((sum: number, m: any) => sum + m.attach_rate, 0) / merchantsWithData.length : 0;
+
+    // Calculate trailing 4-week simple averages by merchant
+    const trailing4WeekMerchantQuery = `
+      SELECT
+        o.account_casesafe_id,
+        CASE WHEN SUM(p.ecomm_orders) > 0 THEN CAST(SUM(p.accepted_offers) AS REAL) / SUM(p.ecomm_orders) ELSE 0 END as trailing_adoption_rate,
+        CASE WHEN SUM(p.ecomm_orders) > 0 THEN CAST(SUM(p.offer_shown) AS REAL) / SUM(p.ecomm_orders) ELSE 0 END as trailing_eligibility_rate,
+        CASE WHEN SUM(p.offer_shown) > 0 THEN CAST(SUM(p.accepted_offers) AS REAL) / SUM(p.offer_shown) ELSE 0 END as trailing_attach_rate
+      FROM performance_actuals p
+      JOIN opportunities o ON p.salesforce_account_id = o.account_casesafe_id
+      WHERE p.iso_week <= (SELECT MAX(iso_week) FROM performance_actuals)
+        AND p.iso_week > (SELECT MAX(iso_week) FROM performance_actuals) - 4
+        AND o.checkout_enabled = 'Yes'
+        AND o.annual_order_volume > 0
+        AND o.pricing_model != 'Flat'
+      GROUP BY o.account_casesafe_id
+      HAVING SUM(p.ecomm_orders) > 0
+    `;
+
+    const trailing4WeekMerchantData = await new Promise<any[]>((resolve, reject) => {
+      db.all(trailing4WeekMerchantQuery, (err, rows: any[]) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(rows || []);
+      });
+    });
+
+    const simpleAvgTrailing4WeekAdoptionRate = trailing4WeekMerchantData.length > 0 ?
+      trailing4WeekMerchantData.reduce((sum: number, m: any) => sum + m.trailing_adoption_rate, 0) / trailing4WeekMerchantData.length : 0;
+    const simpleAvgTrailing4WeekEligibilityRate = trailing4WeekMerchantData.length > 0 ?
+      trailing4WeekMerchantData.reduce((sum: number, m: any) => sum + m.trailing_eligibility_rate, 0) / trailing4WeekMerchantData.length : 0;
+    const simpleAvgTrailing4WeekAttachRate = trailing4WeekMerchantData.length > 0 ?
+      trailing4WeekMerchantData.reduce((sum: number, m: any) => sum + m.trailing_attach_rate, 0) / trailing4WeekMerchantData.length : 0;
+
     const metrics: PerformanceMetrics = {
       totalMerchants: merchantData.length,
       activeMerchants: merchantData.filter((m: any) => m.days_live >= 7).length,
       totalOpportunities: opportunitiesCount.total,
       opportunitiesWithActuals: opportunitiesCount.withActuals,
       opportunitiesWithoutActuals: opportunitiesCount.total - opportunitiesCount.withActuals,
-      avgAdoptionRate: totalEcommOrders > 0 ? totalAcceptedOffers / totalEcommOrders : 0,
-      avgEligibilityRate: totalEcommOrders > 0 ? totalOfferShown / totalEcommOrders : 0,
-      avgAttachRate: totalOfferShown > 0 ? totalAcceptedOffers / totalOfferShown : 0,
+      // Simple averages by merchant (new primary metrics)
+      avgAdoptionRate: simpleAvgAdoptionRate,
+      avgEligibilityRate: simpleAvgEligibilityRate,
+      avgAttachRate: simpleAvgAttachRate,
+      // Volume-weighted averages (legacy/reference metrics)
+      volumeWeightedAdoptionRate: totalEcommOrders > 0 ? totalAcceptedOffers / totalEcommOrders : 0,
+      volumeWeightedEligibilityRate: totalEcommOrders > 0 ? totalOfferShown / totalEcommOrders : 0,
+      volumeWeightedAttachRate: totalOfferShown > 0 ? totalAcceptedOffers / totalOfferShown : 0,
       weekOverWeekChange: 0, // TODO: Calculate from previous week
-      trailing4WeekAdoptionRate: (trailing4WeekData as any)?.total_ecomm_orders > 0 ?
+      // Simple trailing 4-week averages by merchant (new primary metrics)
+      trailing4WeekAdoptionRate: simpleAvgTrailing4WeekAdoptionRate,
+      trailing4WeekEligibilityRate: simpleAvgTrailing4WeekEligibilityRate,
+      trailing4WeekAttachRate: simpleAvgTrailing4WeekAttachRate,
+      // Volume-weighted trailing 4-week averages (legacy/reference metrics)
+      trailing4WeekVolumeWeightedAdoptionRate: (trailing4WeekData as any)?.total_ecomm_orders > 0 ?
         (trailing4WeekData as any).total_accepted_offers / (trailing4WeekData as any).total_ecomm_orders : 0,
-      trailing4WeekEligibilityRate: (trailing4WeekData as any)?.total_ecomm_orders > 0 ?
+      trailing4WeekVolumeWeightedEligibilityRate: (trailing4WeekData as any)?.total_ecomm_orders > 0 ?
         (trailing4WeekData as any).total_offer_shown / (trailing4WeekData as any).total_ecomm_orders : 0,
-      trailing4WeekAttachRate: (trailing4WeekData as any)?.total_offer_shown > 0 ?
+      trailing4WeekVolumeWeightedAttachRate: (trailing4WeekData as any)?.total_offer_shown > 0 ?
         (trailing4WeekData as any).total_accepted_offers / (trailing4WeekData as any).total_offer_shown : 0
     };
 

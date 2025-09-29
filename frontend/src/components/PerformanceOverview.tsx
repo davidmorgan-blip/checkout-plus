@@ -38,10 +38,16 @@ interface PerformanceMetrics {
   avgAdoptionRate: number;
   avgEligibilityRate: number;
   avgAttachRate: number;
+  volumeWeightedAdoptionRate: number;
+  volumeWeightedEligibilityRate: number;
+  volumeWeightedAttachRate: number;
   weekOverWeekChange: number;
   trailing4WeekAdoptionRate: number;
   trailing4WeekEligibilityRate: number;
   trailing4WeekAttachRate: number;
+  trailing4WeekVolumeWeightedAdoptionRate: number;
+  trailing4WeekVolumeWeightedEligibilityRate: number;
+  trailing4WeekVolumeWeightedAttachRate: number;
 }
 
 interface PerformanceTiers {
@@ -327,6 +333,9 @@ export default function PerformanceOverview() {
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
                   T4Wk: {(overviewData.metrics.trailing4WeekAdoptionRate * 100).toFixed(1)}%
                 </Typography>
+                <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.2, fontSize: '0.65rem' }}>
+                  Vol-weighted: {(overviewData.metrics.volumeWeightedAdoptionRate * 100).toFixed(1)}% | T4Wk: {(overviewData.metrics.trailing4WeekVolumeWeightedAdoptionRate * 100).toFixed(1)}%
+                </Typography>
               </Box>
               <TrendingUpIcon color="success" sx={{ fontSize: 40 }} />
             </Box>
@@ -346,6 +355,9 @@ export default function PerformanceOverview() {
                 </Typography>
                 <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
                   T4Wk: {(overviewData.metrics.trailing4WeekEligibilityRate * 100).toFixed(1)}%
+                </Typography>
+                <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.2, fontSize: '0.65rem' }}>
+                  Vol-weighted: {(overviewData.metrics.volumeWeightedEligibilityRate * 100).toFixed(1)}% | T4Wk: {(overviewData.metrics.trailing4WeekVolumeWeightedEligibilityRate * 100).toFixed(1)}%
                 </Typography>
               </Box>
               <CheckCircleIcon color="secondary" sx={{ fontSize: 40 }} />

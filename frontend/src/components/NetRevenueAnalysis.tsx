@@ -25,7 +25,8 @@ import {
   Checkbox,
   Switch,
   TextField,
-  Autocomplete
+  Autocomplete,
+  Link
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -110,6 +111,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const [revenueVarianceFilter, setRevenueVarianceFilter] = useState('all');
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
   const [hideInsufficientData, setHideInsufficientData] = useState(true);
+  const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
 
   // Filter data based on adjustment status, revenue variance, and merchant name
   const getFilteredData = () => {
@@ -147,6 +149,11 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     return filtered;
   };
 
+  // Get filtered data excluding merchants (for display in table)
+  const getFilteredAndIncludedData = () => {
+    return getFilteredData().filter(d => !excludedMerchants.has(d.accountId));
+  };
+
   // Get unique merchant names for autocomplete
   const getMerchantOptions = () => {
     if (!data) return [];
@@ -164,7 +171,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     return 'significantly_below';
   };
 
-  // Calculate counts for each status (only apply base filters, not status/variance filters)
+  // Calculate counts for each status (only apply base filters, not status/variance filters, but include exclusions)
   const getStatusCounts = () => {
     if (!data) return { all: 0, adjusted: 0, pending: 0, notAdjusted: 0 };
 
@@ -180,6 +187,9 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
       filtered = filtered.filter(d => d.hasSufficientData);
     }
 
+    // Exclude merchants that are excluded
+    filtered = filtered.filter(d => !excludedMerchants.has(d.accountId));
+
     return {
       all: filtered.length,
       adjusted: filtered.filter(d => d.adjustmentStatus === 'Adjusted').length,
@@ -188,7 +198,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     };
   };
 
-  // Calculate counts for each revenue variance tier (only apply base filters, not status/variance filters)
+  // Calculate counts for each revenue variance tier (only apply base filters, not status/variance filters, but include exclusions)
   const getRevenueVarianceCounts = () => {
     if (!data) return { all: 0, exceeding: 0, meeting: 0, below: 0, significantly_below: 0 };
 
@@ -203,6 +213,9 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     if (hideInsufficientData) {
       filtered = filtered.filter(d => d.hasSufficientData);
     }
+
+    // Exclude merchants that are excluded
+    filtered = filtered.filter(d => !excludedMerchants.has(d.accountId));
 
     return {
       all: filtered.length,
@@ -240,7 +253,19 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const handleExport = async () => {
     try {
       setExporting(true);
-      const response = await fetch(`http://localhost:3001/api/net-revenue/net-revenue/export?daysLive=${daysLiveFilter}&necessaryChangesOnly=${necessaryChangesOnly}`);
+
+      // Create URL with parameters including excluded merchants
+      const params = new URLSearchParams({
+        daysLive: daysLiveFilter,
+        necessaryChangesOnly: necessaryChangesOnly.toString()
+      });
+
+      // Add excluded merchants as multiple parameters
+      excludedMerchants.forEach(merchantId => {
+        params.append('excludedMerchants', merchantId);
+      });
+
+      const response = await fetch(`http://localhost:3001/api/net-revenue/net-revenue/export?${params.toString()}`);
 
       if (!response.ok) {
         throw new Error('Export failed');
@@ -322,13 +347,15 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   };
 
   const calculateSummaryStats = () => {
-    const filteredData = getFilteredData();
+    const filteredData = getFilteredAndIncludedData();
     if (!filteredData || !Array.isArray(filteredData) || filteredData.length === 0) {
       return {
         totalExpected: 0,
         totalActual: 0,
         totalVariance: 0,
         avgVariance: 0,
+        avgVarianceSimple: 0,
+        avgVarianceWeighted: 0,
         totalVolumeContribution: 0,
         totalAdoptionContribution: 0,
         totalInteractionContribution: 0,
@@ -342,7 +369,9 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     const totalExpected = filteredData.reduce((sum, row) => sum + (row.expectedAnnualRevenue || 0), 0);
     const totalActual = filteredData.reduce((sum, row) => sum + (row.actualAnnualRevenue || 0), 0);
     const totalVariance = totalActual - totalExpected;
-    const avgVariance = filteredData.reduce((sum, row) => sum + (row.revenueVariancePercent || 0), 0) / filteredData.length;
+    // Calculate both simple average and revenue-weighted average variance
+    const avgVarianceSimple = filteredData.reduce((sum, row) => sum + (row.revenueVariancePercent || 0), 0) / filteredData.length;
+    const avgVarianceWeighted = totalExpected !== 0 ? (totalVariance / totalExpected) * 100 : 0;
 
     const totalVolumeContribution = filteredData.reduce((sum, row) => sum + (row.volumeContribution || 0), 0);
     const totalAdoptionContribution = filteredData.reduce((sum, row) => sum + (row.adoptionContribution || 0), 0);
@@ -358,7 +387,9 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
       totalExpected,
       totalActual,
       totalVariance,
-      avgVariance,
+      avgVariance: avgVarianceSimple,
+      avgVarianceSimple,
+      avgVarianceWeighted,
       totalVolumeContribution,
       totalAdoptionContribution,
       totalInteractionContribution,
@@ -367,6 +398,26 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
       avgAdoptionExpected,
       avgAdoptionActual
     };
+  };
+
+  // Exclusion handlers
+  const handleExcludeToggle = (accountId: string) => {
+    const newExcluded = new Set(excludedMerchants);
+    if (newExcluded.has(accountId)) {
+      newExcluded.delete(accountId);
+    } else {
+      newExcluded.add(accountId);
+    }
+    setExcludedMerchants(newExcluded);
+  };
+
+  const handleSelectAll = () => {
+    const allAccountIds = new Set(getFilteredData().map(item => item.accountId));
+    setExcludedMerchants(allAccountIds);
+  };
+
+  const handleClearAll = () => {
+    setExcludedMerchants(new Set());
   };
 
   const summaryStats = calculateSummaryStats();
@@ -488,6 +539,11 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                 <Typography variant="h5">
                   {formatCurrency(summaryStats.totalExpected)}
                 </Typography>
+                {excludedMerchants.size > 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    ({excludedMerchants.size} excluded)
+                  </Typography>
+                )}
               </Box>
               <AttachMoneyIcon color="primary" sx={{ fontSize: 40 }} />
             </Box>
@@ -504,6 +560,11 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                 <Typography variant="h5">
                   {formatCurrency(summaryStats.totalActual)}
                 </Typography>
+                {excludedMerchants.size > 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    ({excludedMerchants.size} excluded)
+                  </Typography>
+                )}
               </Box>
               <AttachMoneyIcon color="secondary" sx={{ fontSize: 40 }} />
             </Box>
@@ -518,8 +579,13 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                   Revenue Variance
                 </Typography>
                 <Typography variant="h5" color={summaryStats.totalVariance >= 0 ? 'success.main' : 'error.main'}>
-                  {formatCurrency(summaryStats.totalVariance)}
+                  {summaryStats.totalVariance >= 0 ? formatCurrency(summaryStats.totalVariance) : `(${formatCurrency(Math.abs(summaryStats.totalVariance))})`}
                 </Typography>
+                {excludedMerchants.size > 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    ({excludedMerchants.size} excluded)
+                  </Typography>
+                )}
               </Box>
               {getVarianceIcon(summaryStats.totalVariance)}
             </Box>
@@ -534,8 +600,16 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                   Average Variance %
                 </Typography>
                 <Typography variant="h5" color={summaryStats.avgVariance >= 0 ? 'success.main' : 'error.main'}>
-                  {formatPercentage(summaryStats.avgVariance)}
+                  {summaryStats.avgVariance >= 0 ? formatPercentage(summaryStats.avgVariance) : `(${Math.abs(summaryStats.avgVariance).toFixed(1)}%)`}
                 </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  Rev-weighted: {(summaryStats.avgVarianceWeighted || 0) >= 0 ? `+${(summaryStats.avgVarianceWeighted || 0).toFixed(1)}%` : `(${Math.abs(summaryStats.avgVarianceWeighted || 0).toFixed(1)}%)`}
+                </Typography>
+                {excludedMerchants.size > 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    ({excludedMerchants.size} excluded)
+                  </Typography>
+                )}
               </Box>
               {getVarianceIcon(summaryStats.avgVariance)}
             </Box>
@@ -648,6 +722,30 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
             <Table>
               <TableHead>
                 <TableRow>
+                  <TableCell padding="checkbox">
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+                      <Typography variant="caption">Exclude</Typography>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Link
+                          component="button"
+                          variant="caption"
+                          onClick={handleSelectAll}
+                          sx={{ cursor: 'pointer' }}
+                        >
+                          All
+                        </Link>
+                        <Typography variant="caption">|</Typography>
+                        <Link
+                          component="button"
+                          variant="caption"
+                          onClick={handleClearAll}
+                          sx={{ cursor: 'pointer' }}
+                        >
+                          None
+                        </Link>
+                      </Box>
+                    </Box>
+                  </TableCell>
                   <TableCell>Merchant</TableCell>
                   <TableCell align="center">Days Live</TableCell>
                   <TableCell align="right">Expected Annual Revenue</TableCell>
@@ -663,9 +761,12 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                 {/* Total Row */}
                 {data && data.length > 0 && (
                   <TableRow sx={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
+                    <TableCell padding="checkbox">
+                      {/* Empty cell for alignment with exclude column */}
+                    </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight="bold">
-                        TOTAL ({getFilteredData().length} merchants)
+                        TOTAL ({getFilteredAndIncludedData().length} merchants{excludedMerchants.size > 0 && `, ${excludedMerchants.size} excluded`})
                       </Typography>
                       <Typography variant="caption" color="textSecondary">
                         Aggregated Performance
@@ -735,6 +836,13 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
                   .sort((a, b) => Math.abs((b.revenueVariance || 0)) - Math.abs((a.revenueVariance || 0)))
                   .map((row) => (
                     <TableRow key={row.accountId} hover>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={excludedMerchants.has(row.accountId)}
+                          onChange={() => handleExcludeToggle(row.accountId)}
+                          size="small"
+                        />
+                      </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           {renderMerchantWithLinks(
