@@ -23,7 +23,9 @@ import {
   TextField,
   Autocomplete,
   Checkbox,
-  Link
+  Link,
+  Collapse,
+  Button
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -31,6 +33,32 @@ import BusinessIcon from '@mui/icons-material/Business';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import LaunchIcon from '@mui/icons-material/Launch';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip as ChartTooltip,
+  Legend,
+  Filler,
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  ChartTooltip,
+  Legend,
+  Filler
+);
 
 interface VolumeSummary {
   currentWeekOrders: number;
@@ -128,6 +156,7 @@ export default function VolumeAnalysis() {
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
   const [forecastTierFilter, setForecastTierFilter] = useState('all');
   const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
+  const [forecastChartExpanded, setForecastChartExpanded] = useState(true);
 
   const fetchVolumeData = async () => {
     try {
@@ -201,6 +230,184 @@ export default function VolumeAnalysis() {
       meeting: validForecasts.filter(f => getForecastPerformanceTier(f) === 'meeting').length,
       below: validForecasts.filter(f => getForecastPerformanceTier(f) === 'below').length,
       significantly_below: validForecasts.filter(f => getForecastPerformanceTier(f) === 'significantly_below').length
+    };
+  };
+
+  // Generate 12-month forecast data for chart visualization
+  const generateForecastChartData = () => {
+    if (!volumeData) return null;
+
+    const recentWeeks = getRecentWeeks(); // Get the 6 most recent weeks
+    const merchantData = getMerchantWeeklyData();
+
+    // Use existing filtered forecast logic to maintain consistency
+    const merchantsInWeeklyData = new Set(merchantData.map(m => m.merchant_name));
+    const filteredForecasts = volumeData.forecasts.filter(forecast => {
+      const hasValidForecast = forecast.forecast_12month_orders !== null && merchantsInWeeklyData.has(forecast.merchant_name);
+      if (!hasValidForecast) return false;
+
+      // Apply exclusion filter
+      if (excludedMerchants.has(forecast.salesforce_account_id)) return false;
+
+      // Apply merchant filter
+      if (merchantFilter && forecast.merchant_name !== merchantFilter) return false;
+
+      return true;
+    });
+
+    // Generate 52 weeks starting from the first week of actual data
+    const startWeek = recentWeeks[0]; // First of the 6 recent weeks
+    const weeks = [];
+    const actualData = [];
+    const expectedData = [];
+    const forecastData = [];
+
+    for (let i = 0; i < 52; i++) {
+      const weekNumber = ((startWeek - 1 + i) % 52) + 1; // Handle year wraparound
+      weeks.push(`Week ${weekNumber}`);
+
+      let actualWeekTotal = 0;
+      let expectedWeekTotal = 0;
+      let forecastWeekTotal = 0;
+
+
+      // For the first 6 weeks (actuals period)
+      if (i < 6) {
+        // Get actuals from weekly trends data
+        const filteredMerchantData = merchantData.filter(merchant =>
+          !excludedMerchants.has(merchant.salesforce_account_id) &&
+          (!merchantFilter || merchant.merchant_name === merchantFilter)
+        );
+
+        filteredMerchantData.forEach(merchant => {
+          const weekData = merchant.weeks.get(weekNumber);
+          if (weekData) {
+            actualWeekTotal += weekData.actual;
+            expectedWeekTotal += weekData.expected;
+          }
+        });
+
+        actualData.push(actualWeekTotal);
+        expectedData.push(expectedWeekTotal);
+        forecastData.push(null); // No forecast for actual periods
+      } else {
+        // For forecast period (weeks 7-52), leverage existing forecast logic
+        actualData.push(null); // No actuals for future weeks
+
+        filteredForecasts.forEach(forecast => {
+          // Use seasonality data to distribute annual volumes across weeks
+          const vertical = forecast.benchmark_vertical === 'Swimwear' ? 'Swimwear' : 'Total ex. Swimwear';
+          const seasonalityEntry = volumeData.seasonalityData.find(s =>
+            s.vertical === vertical && s.iso_week === weekNumber
+          );
+
+          if (seasonalityEntry) {
+            // Expected weekly volume (original projected)
+            const weeklyExpected = (forecast.annual_order_volume * seasonalityEntry.order_percentage) / 100;
+            expectedWeekTotal += weeklyExpected;
+
+            // Forecasted weekly volume (updated projection)
+            const weeklyForecast = ((forecast.forecast_12month_orders || 0) * seasonalityEntry.order_percentage) / 100;
+            forecastWeekTotal += weeklyForecast;
+          } else {
+            // If no seasonality data found, use average distribution (1/52 = ~1.92%)
+            const avgPercentage = 1.92;
+            const weeklyExpected = (forecast.annual_order_volume * avgPercentage) / 100;
+            expectedWeekTotal += weeklyExpected;
+
+            const weeklyForecast = ((forecast.forecast_12month_orders || 0) * avgPercentage) / 100;
+            forecastWeekTotal += weeklyForecast;
+          }
+        });
+
+        expectedData.push(expectedWeekTotal);
+        forecastData.push(forecastWeekTotal);
+      }
+    }
+
+    const chartOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top' as const,
+        },
+        title: {
+          display: true,
+          text: '12-Month Volume Forecast',
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context: any): string {
+              const label = context.dataset.label || '';
+              const value = context.parsed.y;
+              if (value === null) return '';
+              return `${label}: ${Math.round(value).toLocaleString()} orders`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Week'
+          }
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Orders'
+          },
+          beginAtZero: true
+        }
+      },
+      elements: {
+        point: {
+          radius: function(context: any) {
+            return context.parsed.y === null ? 0 : context.dataset.pointRadius;
+          }
+        }
+      }
+    };
+
+    return {
+      data: {
+        labels: weeks,
+        datasets: [
+          {
+            label: 'Actual Orders',
+            data: actualData,
+            borderColor: 'rgb(54, 162, 235)',
+            backgroundColor: 'rgba(54, 162, 235, 0.3)',
+            fill: false,
+            tension: 0.1,
+            pointRadius: 4,
+            pointBackgroundColor: 'rgb(54, 162, 235)',
+          },
+          {
+            label: 'Expected Orders (Original)',
+            data: expectedData,
+            borderColor: 'rgb(255, 99, 132)',
+            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+            fill: false,
+            tension: 0.1,
+            pointRadius: 2,
+            borderDash: [5, 5],
+          },
+          {
+            label: 'Forecasted Orders (Updated)',
+            data: forecastData,
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.3)',
+            fill: '+1',
+            tension: 0.1,
+            pointRadius: 3,
+            pointBackgroundColor: 'rgb(75, 192, 192)',
+          }
+        ]
+      },
+      options: chartOptions
     };
   };
 
@@ -545,6 +752,38 @@ export default function VolumeAnalysis() {
           </CardContent>
         </Card>
       </Box>
+
+      {/* 12-Month Forecast Chart */}
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+            12-Month Volume Forecast
+          </Typography>
+          <IconButton
+            onClick={() => setForecastChartExpanded(!forecastChartExpanded)}
+            size="small"
+          >
+            {forecastChartExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          </IconButton>
+        </Box>
+
+        <Collapse in={forecastChartExpanded}>
+          <Box sx={{ height: 400, width: '100%', maxWidth: 'none' }}>
+            {(() => {
+              const chartData = generateForecastChartData();
+              return chartData ? (
+                <Line data={chartData.data} options={chartData.options} />
+              ) : (
+                <Box display="flex" alignItems="center" justifyContent="center" height="100%">
+                  <Typography color="text.secondary">
+                    No forecast data available
+                  </Typography>
+                </Box>
+              );
+            })()}
+          </Box>
+        </Collapse>
+      </Paper>
 
       {/* Weekly Trends Table */}
       <Paper sx={{ p: 2 }}>

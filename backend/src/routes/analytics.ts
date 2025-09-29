@@ -701,7 +701,7 @@ router.get('/volume', async (req, res) => {
         },
         weeklyTrends,
         forecasts,
-        seasonalityData: []
+        seasonalityData: seasonalityData
       }
     });
 
