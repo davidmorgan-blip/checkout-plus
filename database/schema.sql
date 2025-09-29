@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS opportunities (
   account_name TEXT, -- Opportunity: Account Name
   opportunity_id TEXT UNIQUE NOT NULL, -- Opportunity: Opportunity ID
   benchmark_vertical TEXT, -- Opportunity: Benchmark Vertical
-  close_date DATE, -- Opportunity: Close Date
-  contract_effective_date DATE, -- Opportunity: Ordway Contract Effective Date
+  close_date DATE, -- Opportunity: Close Date (YYYY-MM-DD format)
+  contract_effective_date DATE, -- Opportunity: Ordway Contract Effective Date (YYYY-MM-DD format)
   checkout_enabled TEXT, -- Opportunity: Checkout+ Enabled
   pricing_model TEXT, -- Opportunity: Checkout+ Pricing Model (Flat, Rev Share, Per Order)
   labels_paid_by TEXT, -- Opportunity: Labels Paid By (Merchant, Loop)

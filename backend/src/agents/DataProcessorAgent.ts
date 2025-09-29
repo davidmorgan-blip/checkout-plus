@@ -130,8 +130,8 @@ export class DataProcessorAgent {
             accountName: row['Opportunity: Account Name'],
             opportunityId: row['Opportunity: Opportunity ID'],
             benchmarkVertical: row['Opportunity: Benchmark Vertical'] || '',
-            closeDate: row['Opportunity: Close Date'] || '',
-            contractEffectiveDate: row['Opportunity: Ordway Contract Effective Date'] || '',
+            closeDate: this.convertMDYtoYMD(row['Opportunity: Close Date'] || ''),
+            contractEffectiveDate: this.convertMDYtoYMD(row['Opportunity: Ordway Contract Effective Date'] || ''),
             checkoutEnabled: row['Opportunity: Checkout+ Enabled'] || '',
             pricingModel: row['Opportunity: Checkout+ Pricing Model'] || '',
             labelsPaidBy: row['Opportunity: Labels Paid By'] || '',
@@ -359,6 +359,29 @@ export class DataProcessorAgent {
       for (const [week, percentage] of Object.entries(data.weeklyPercentages)) {
         await database.run(sql, [data.vertical, parseInt(week), percentage]);
       }
+    }
+  }
+
+  private convertMDYtoYMD(dateStr: string): string {
+    if (!dateStr || dateStr.trim() === '') return '';
+
+    try {
+      // Parse M/D/YY format
+      const parts = dateStr.split('/');
+      if (parts.length !== 3) return '';
+
+      const month = parseInt(parts[0]);
+      const day = parseInt(parts[1]);
+      const year = parseInt(parts[2]);
+
+      // Convert 2-digit year to 4-digit (assuming 20XX)
+      const fullYear = year < 100 ? 2000 + year : year;
+
+      // Format as YYYY-MM-DD
+      return `${fullYear}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    } catch (error) {
+      console.warn(`Failed to convert date: ${dateStr}`, error);
+      return '';
     }
   }
 

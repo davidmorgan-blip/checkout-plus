@@ -401,7 +401,14 @@ export default function SimpleDashboard() {
                   )}
                   {uploadStatus.opportunityMaxCloseDate && (
                     <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
-                      Through close date {new Date(uploadStatus.opportunityMaxCloseDate).toLocaleDateString()}
+                      Through close date {(() => {
+                        const parts = uploadStatus.opportunityMaxCloseDate.split('-');
+                        if (parts.length === 3) {
+                          const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                          return date.toLocaleDateString();
+                        }
+                        return uploadStatus.opportunityMaxCloseDate;
+                      })()}
                     </Typography>
                   )}
                   {uploadStatus.opportunitiesLastUpdated && (
