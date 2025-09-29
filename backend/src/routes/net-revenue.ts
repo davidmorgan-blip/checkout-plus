@@ -10,6 +10,7 @@ interface NetRevenueData {
   opportunityId: string;
   accountName: string;
   closeDate: string;
+  opportunityRecordType: string;
   pricingModel: string;
   labelsPaidBy: string;
   expectedAnnualRevenue: number;
@@ -331,7 +332,7 @@ router.get('/net-revenue', async (req, res) => {
         opportunityId: opportunity.opportunityId,
         accountName: opportunity.accountName,
         closeDate: opportunity.closeDate,
-        opportunityRecordType: opportunity.opportunityRecordType,
+        opportunityRecordType: opportunity.opportunityRecordType || '',
         pricingModel: opportunity.pricingModel,
         labelsPaidBy: opportunity.labels_paid_by,
         expectedAnnualRevenue: Math.round(expectedRevenue),
