@@ -141,6 +141,7 @@ router.get('/status', async (req, res) => {
   try {
     const opportunityCount = await database.get('SELECT COUNT(*) as count FROM opportunities');
     const opportunityLastUpdate = await database.get('SELECT MAX(created_at) as last_updated FROM opportunities');
+    const opportunityMaxCloseDate = await database.get('SELECT MAX(close_date) as max_close_date FROM opportunities WHERE close_date IS NOT NULL');
 
     const performanceCount = await database.get('SELECT COUNT(*) as count FROM performance_actuals');
     const performanceWeeksCount = await database.get('SELECT COUNT(DISTINCT order_week) as count FROM performance_actuals');
@@ -156,6 +157,7 @@ router.get('/status', async (req, res) => {
       data: {
         opportunities: opportunityCount?.count || 0,
         opportunitiesLastUpdated: opportunityLastUpdate?.last_updated || null,
+        opportunityMaxCloseDate: opportunityMaxCloseDate?.max_close_date || null,
         performanceRecords: performanceCount?.count || 0,
         performanceWeeks: performanceWeeksCount?.count || 0,
         performanceMaxOrderWeek: performanceMaxOrderWeek?.max_order_week || null,

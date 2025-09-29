@@ -57,6 +57,7 @@ function TabPanel(props: TabPanelProps) {
 interface UploadStatus {
   opportunities: number;
   opportunitiesLastUpdated?: string | null;
+  opportunityMaxCloseDate?: string | null;
   performanceRecords: number;
   performanceWeeks: number;
   performanceMaxOrderWeek?: string | null;
@@ -396,6 +397,11 @@ export default function SimpleDashboard() {
                   {opportunitiesBreakdown.totalOpportunities > 0 && (
                     <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
                       {opportunitiesBreakdown.opportunitiesWithActuals} with actuals • {opportunitiesBreakdown.opportunitiesWithoutActuals} pending launch
+                    </Typography>
+                  )}
+                  {uploadStatus.opportunityMaxCloseDate && (
+                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                      Through close date {new Date(uploadStatus.opportunityMaxCloseDate).toLocaleDateString()}
                     </Typography>
                   )}
                   {uploadStatus.opportunitiesLastUpdated && (
