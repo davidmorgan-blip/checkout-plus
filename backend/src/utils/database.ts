@@ -28,6 +28,15 @@ export class Database {
         await this.run(statement);
       }
 
+      // Check if merchant_segment column exists, add it if not
+      try {
+        await this.run('SELECT merchant_segment FROM opportunities LIMIT 1');
+      } catch (error) {
+        // Column doesn't exist, add it
+        console.log('Adding merchant_segment column to opportunities table');
+        await this.run('ALTER TABLE opportunities ADD COLUMN merchant_segment TEXT');
+      }
+
       console.log('Database schema initialized successfully');
     } catch (error) {
       console.error('Error initializing database:', error);

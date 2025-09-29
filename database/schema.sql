@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS opportunities (
   domestic_return_rate REAL, -- Opportunity: Domestic Return Rate %
   adoption_rate REAL, -- Opportunity: Adoption Rate
   opportunity_record_type TEXT, -- Opportunity: Opportunity Record Type
+  merchant_segment TEXT, -- Opportunity: Merchant Segment
   implementation_status TEXT, -- Implementation Status
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
