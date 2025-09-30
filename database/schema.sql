@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS opportunities (
   opportunity_record_type TEXT, -- Opportunity: Opportunity Record Type
   merchant_segment TEXT, -- Opportunity: Merchant Segment
   implementation_status TEXT, -- Implementation Status
+  net_acv REAL, -- Opportunity: Net ACV
+  company_acv_starting_value REAL, -- Opportunity: Company ACV - Starting Value
+  company_acv_ending_value REAL, -- Opportunity: Company ACV - Ending Value
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
