@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_ENDPOINTS } from '../config/api';
 import {
   Box,
   Grid,
@@ -25,6 +26,8 @@ import {
   Autocomplete,
   Checkbox,
   Link,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -135,6 +138,7 @@ export default function PerformanceOverview() {
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
   const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
   const [allMerchantData, setAllMerchantData] = useState<MerchantData[]>([]);
+  const [hideLowAdoptionRate, setHideLowAdoptionRate] = useState(false);
 
   const fetchOverviewData = async () => {
     try {
@@ -143,7 +147,7 @@ export default function PerformanceOverview() {
         params.append('daysLive', daysLiveFilter);
       }
 
-      const response = await fetch(`http://localhost:3001/api/analytics/overview?${params}`);
+      const response = await fetch(`${API_ENDPOINTS.ANALYTICS_OVERVIEW}?${params}`);
       const result = await response.json();
 
       if (result.success) {
@@ -166,7 +170,7 @@ export default function PerformanceOverview() {
       // Don't apply performance tier or merchant name filters for summary data
       params.append('limit', '1000');
 
-      const response = await fetch(`http://localhost:3001/api/analytics/merchants?${params}`);
+      const response = await fetch(`${API_ENDPOINTS.ANALYTICS_MERCHANTS}?${params}`);
       const result = await response.json();
 
       if (result.success) {
@@ -192,7 +196,7 @@ export default function PerformanceOverview() {
       // Set a high limit to get all merchants
       params.append('limit', '1000');
 
-      const response = await fetch(`http://localhost:3001/api/analytics/merchants?${params}`);
+      const response = await fetch(`${API_ENDPOINTS.ANALYTICS_MERCHANTS}?${params}`);
       const result = await response.json();
 
       if (result.success) {
@@ -216,6 +220,34 @@ export default function PerformanceOverview() {
 
     fetchData();
   }, [daysLiveFilter, performanceTierFilter, merchantFilter]);
+
+  // Automatically exclude/include merchants based on the low adoption rate toggle
+  useEffect(() => {
+    if (hideLowAdoptionRate) {
+      // Add merchants with <2% adoption rate to the excluded set
+      const lowAdoptionMerchants = allMerchantData
+        .filter(m => m.current_adoption_rate < 0.02)
+        .map(m => m.salesforce_account_id);
+
+      setExcludedMerchants(prev => {
+        const newExcluded = new Set(prev);
+        lowAdoptionMerchants.forEach(id => newExcluded.add(id));
+        return newExcluded;
+      });
+    } else {
+      // Remove low adoption merchants from excluded set (but keep manually excluded ones)
+      // We need to track which ones were manually excluded vs automatically excluded
+      const lowAdoptionMerchants = allMerchantData
+        .filter(m => m.current_adoption_rate < 0.02)
+        .map(m => m.salesforce_account_id);
+
+      setExcludedMerchants(prev => {
+        const newExcluded = new Set(prev);
+        lowAdoptionMerchants.forEach(id => newExcluded.delete(id));
+        return newExcluded;
+      });
+    }
+  }, [hideLowAdoptionRate, allMerchantData]);
 
   // Get unique merchant names for autocomplete
   const getMerchantOptions = () => {
@@ -467,6 +499,17 @@ export default function PerformanceOverview() {
           clearOnBlur={false}
           clearOnEscape
           freeSolo={false}
+        />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={hideLowAdoptionRate}
+              onChange={(e) => setHideLowAdoptionRate(e.target.checked)}
+              size="small"
+            />
+          }
+          label="Hide <2% adoption rate"
+          sx={{ ml: 2 }}
         />
       </Box>
 
