@@ -86,10 +86,6 @@ const Login: React.FC = () => {
           >
             Sign in with Google Workspace
           </Button>
-
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 3, textAlign: 'center' }}>
-            Restricted to @loopreturns.com accounts only
-          </Typography>
         </Paper>
       </Box>
     </Container>
