@@ -31,6 +31,7 @@ import PerformanceOverview from './PerformanceOverview';
 import VolumeAnalysis from './VolumeAnalysis';
 import NetRevenueAnalysis from './NetRevenueAnalysis';
 import AcvImpactsAnalysis from './AcvImpactsAnalysis';
+import { API_ENDPOINTS } from '../config/api';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -125,7 +126,7 @@ export default function SimpleDashboard() {
 
   const fetchUploadStatus = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/upload/status');
+      const response = await fetch(API_ENDPOINTS.UPLOAD_STATUS);
       const result = await response.json();
       if (result.success) {
         setUploadStatus(result.data);
@@ -137,7 +138,7 @@ export default function SimpleDashboard() {
 
   const fetchOpportunitiesBreakdown = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/analytics/overview');
+      const response = await fetch(API_ENDPOINTS.ANALYTICS_OVERVIEW);
       const result = await response.json();
       if (result.success && result.data.metrics) {
         setOpportunitiesBreakdown({
@@ -198,7 +199,13 @@ export default function SimpleDashboard() {
       const formData = new FormData();
       formData.append('csv', file);
 
-      const response = await fetch(`http://localhost:3001/api/upload/${endpoint}`, {
+      const endpointMap: { [key: string]: string } = {
+        'opportunities': API_ENDPOINTS.UPLOAD_OPPORTUNITIES,
+        'performance': API_ENDPOINTS.UPLOAD_PERFORMANCE,
+        'seasonality': API_ENDPOINTS.UPLOAD_SEASONALITY,
+      };
+
+      const response = await fetch(endpointMap[endpoint] || `http://localhost:3001/api/upload/${endpoint}`, {
         method: 'POST',
         body: formData,
       });
