@@ -53,8 +53,12 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(frontendBuildPath));
   
   // Serve index.html for all non-API routes (client-side routing)
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(frontendBuildPath, 'index.html'));
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api/') && !req.path.startsWith('/health')) {
+      res.sendFile(path.join(frontendBuildPath, 'index.html'));
+    } else {
+      next();
+    }
   });
 } else {
   // 404 handler for development

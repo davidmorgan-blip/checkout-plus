@@ -45,9 +45,11 @@ checkout-plus/
    - Created API config to dynamically determine backend URL
 
 4. **Configured backend**:
-   - Runs on localhost:3001
+   - Development: Runs on localhost:3001
+   - Production: Runs on 0.0.0.0:5000, serves both API and frontend
    - Uses SQLite database (auto-created on startup)
    - CORS enabled for frontend communication
+   - Fixed Express 5.x compatibility for static file serving
 
 5. **Set up workflows**:
    - **Backend**: Runs on port 3001 (console output)
@@ -56,7 +58,8 @@ checkout-plus/
 6. **Deployment configuration**:
    - Type: VM (maintains state for SQLite database)
    - Build: Compiles both frontend and backend TypeScript
-   - Run: Starts backend server and serves frontend build
+   - Run: Backend serves both API and frontend on single port (5000)
+   - Fixed Express 5.x wildcard route compatibility issue
 
 ## Development
 
