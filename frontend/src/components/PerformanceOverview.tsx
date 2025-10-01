@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import {
   Box,
@@ -339,6 +339,50 @@ export default function PerformanceOverview() {
     };
   };
 
+  const filteredPerformanceTiers = useMemo(() => {
+    // Get all merchant data excluding explicitly excluded merchants
+    const filteredData = allMerchantData.filter(m => !excludedMerchants.has(m.salesforce_account_id));
+
+    const counts = {
+      exceeding: 0,
+      meeting: 0,
+      slightlyBelow: 0,
+      significantlyBelow: 0,
+      noTier: 0
+    };
+
+    console.log('Computing filtered performance tiers:', {
+      totalMerchants: allMerchantData.length,
+      excludedCount: excludedMerchants.size,
+      filteredCount: filteredData.length,
+      sampleTiers: filteredData.slice(0, 5).map(m => ({ name: m.merchant_name, tier: m.performance_tier }))
+    });
+
+    filteredData.forEach(merchant => {
+      switch (merchant.performance_tier) {
+        case 'exceeding':
+          counts.exceeding++;
+          break;
+        case 'meeting':
+          counts.meeting++;
+          break;
+        case 'slightly_below':
+          counts.slightlyBelow++;
+          break;
+        case 'significantly_below':
+          counts.significantlyBelow++;
+          break;
+        default:
+          counts.noTier++;
+          break;
+      }
+    });
+
+    console.log('Performance tier counts:', counts);
+
+    return counts;
+  }, [allMerchantData, excludedMerchants]);
+
   const getPerformanceTierColor = (tier: string) => {
     switch (tier) {
       case 'exceeding': return 'success';
@@ -400,7 +444,8 @@ export default function PerformanceOverview() {
   const filteredMetrics = getFilteredSummaryMetrics();
 
   // For chips, use server data. For summary tiles, use filtered metrics
-  const totalMerchantsFromServer = overviewData.metrics.totalMerchants;
+  // Use allMerchantData.length to be consistent with performance tier chips
+  const totalMerchantsFromServer = allMerchantData.length;
   const excludedCount = excludedMerchants.size;
 
   return (
@@ -511,41 +556,44 @@ export default function PerformanceOverview() {
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <Chip
-            label={`All: ${totalMerchantsFromServer}`}
+            label={`All: ${filteredPerformanceTiers.exceeding + filteredPerformanceTiers.meeting + filteredPerformanceTiers.slightlyBelow + filteredPerformanceTiers.significantlyBelow + filteredPerformanceTiers.noTier}`}
             color="primary"
             variant={performanceTierFilter === 'all' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('all')}
             clickable
           />
           <Chip
-            label={`Exceeding: ${overviewData.performanceTiers.exceeding}`}
+            label={`Exceeding: ${filteredPerformanceTiers.exceeding}`}
             color="success"
             variant={performanceTierFilter === 'exceeding' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('exceeding')}
             clickable
           />
           <Chip
-            label={`Meeting: ${overviewData.performanceTiers.meeting}`}
+            label={`Meeting: ${filteredPerformanceTiers.meeting}`}
             color="info"
             variant={performanceTierFilter === 'meeting' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('meeting')}
             clickable
           />
           <Chip
-            label={`Slightly Below: ${overviewData.performanceTiers.slightlyBelow}`}
+            label={`Slightly Below: ${filteredPerformanceTiers.slightlyBelow}`}
             color="warning"
             variant={performanceTierFilter === 'slightly_below' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('slightly_below')}
             clickable
           />
           <Chip
-            label={`Significantly Below: ${overviewData.performanceTiers.significantlyBelow}`}
+            label={`Significantly Below: ${filteredPerformanceTiers.significantlyBelow}`}
             color="error"
             variant={performanceTierFilter === 'significantly_below' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('significantly_below')}
             clickable
           />
         </Box>
+        <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 2 }}>
+          <strong>Performance Tiers:</strong> Exceeding (&gt;5pp above expected adoption rate) • Meeting (within ±5pp of expected) • Slightly Below (5-10pp below expected) • Significantly Below (&gt;10pp below expected)
+        </Typography>
       </Paper>
 
       {/* Top Merchants Table */}
