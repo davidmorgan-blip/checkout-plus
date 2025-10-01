@@ -36,6 +36,7 @@ import LaunchIcon from '@mui/icons-material/Launch';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
+import { API_ENDPOINTS } from '../config/api';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -165,7 +166,7 @@ export default function VolumeAnalysis() {
         params.append('daysLive', daysLiveFilter);
       }
 
-      const response = await fetch(`http://localhost:3001/api/analytics/volume?${params}`);
+      const response = await fetch(`${API_ENDPOINTS.ANALYTICS_VOLUME}?${params}`);
       const result = await response.json();
 
       if (result.success) {
@@ -437,6 +438,8 @@ export default function VolumeAnalysis() {
           merchant_name: trend.merchant_name,
           benchmark_vertical: trend.benchmark_vertical,
           labels_paid_by: trend.labels_paid_by,
+          merchant_segment: trend.merchant_segment,
+          opportunity_record_type: trend.opportunity_record_type,
           days_live: trend.days_live,
           weeks: new Map(),
           trailing6WeekTotal: 0
@@ -929,7 +932,7 @@ export default function VolumeAnalysis() {
                       merchant.merchant_name,
                       merchant.salesforce_account_id,
                       merchant.opportunity_id,
-                      `${merchant.benchmark_vertical || 'Unknown'} • ${merchant.labels_paid_by === 'Loop' ? 'LPL' : merchant.labels_paid_by === 'Merchant' ? 'MPL' : merchant.labels_paid_by}`
+                      `${merchant.merchant_segment || 'Unknown'} • ${merchant.labels_paid_by === 'Loop' ? 'LPL' : merchant.labels_paid_by === 'Merchant' ? 'MPL' : merchant.labels_paid_by} • ${merchant.opportunity_record_type === 'New Business' ? 'New Business' : 'Existing'}`
                     )}
                   </TableCell>
                   <TableCell align="right">
@@ -1184,7 +1187,7 @@ export default function VolumeAnalysis() {
                           forecast.merchant_name,
                           forecast.salesforce_account_id,
                           forecast.opportunity_id,
-                          `${forecast.benchmark_vertical || 'Unknown'} • ${forecast.labels_paid_by === 'Loop' ? 'LPL' : forecast.labels_paid_by === 'Merchant' ? 'MPL' : forecast.labels_paid_by}`
+                          `${forecast.merchant_segment || 'Unknown'} • ${forecast.labels_paid_by === 'Loop' ? 'LPL' : forecast.labels_paid_by === 'Merchant' ? 'MPL' : forecast.labels_paid_by} • ${forecast.opportunity_record_type === 'New Business' ? 'New Business' : 'Existing'}`
                         )}
                       </TableCell>
                       <TableCell align="right">

@@ -562,6 +562,8 @@ router.get('/volume', async (req, res) => {
         o.benchmark_vertical,
         o.annual_order_volume,
         o.labels_paid_by,
+        o.merchant_segment,
+        o.opportunity_record_type,
         o.adoption_rate as expected_adoption_rate,
         CASE WHEN COALESCE(p.ecomm_orders, 0) > 0 THEN CAST(COALESCE(p.accepted_offers, 0) AS REAL) / p.ecomm_orders ELSE 0 END as actual_adoption_rate,
         (SELECT JULIANDAY((SELECT MAX(order_week) FROM performance_actuals)) - JULIANDAY(p2.first_offer_date) FROM performance_actuals p2 WHERE p2.salesforce_account_id = o.account_casesafe_id LIMIT 1) as days_live
@@ -656,6 +658,8 @@ router.get('/volume', async (req, res) => {
           merchant_name: merchant.merchant_name,
           benchmark_vertical: merchant.benchmark_vertical,
           labels_paid_by: merchant.labels_paid_by,
+          merchant_segment: merchant.merchant_segment,
+          opportunity_record_type: merchant.opportunity_record_type,
           trailing_4week_avg_orders: avgActualOrders,
           expected_weekly_orders: avgExpectedOrders,
           days_live: merchant.days_live,

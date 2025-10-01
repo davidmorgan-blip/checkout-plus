@@ -42,6 +42,7 @@ interface AcvImpactData {
   accountId: string;
   opportunityId: string;
   merchantName: string;
+  opportunityRecordType: string;
   pricingModel: string;
   labelsPaidBy: string;
   merchantSegment: string;
@@ -88,6 +89,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   const [pricingModelFilter, setPricingModelFilter] = useState('all');
   const [labelsPaidByFilter, setLabelsPaidByFilter] = useState('all');
   const [merchantSegmentFilter, setMerchantSegmentFilter] = useState('all');
+  const [recordTypeFilter, setRecordTypeFilter] = useState('all');
   const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
   const [hideInsufficientData, setHideInsufficientData] = useState(false);
 
@@ -592,6 +594,14 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         return false;
       }
 
+      // Apply record type filter
+      if (recordTypeFilter !== 'all') {
+        const recordType = item.opportunityRecordType === 'New Business' ? 'New Business' : 'Existing';
+        if (recordType !== recordTypeFilter) {
+          return false;
+        }
+      }
+
       return true;
     });
 
@@ -620,7 +630,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       avgAcvVariance,
       varianceCounts
     };
-  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, hideInsufficientData, daysLiveFilter, summary]);
+  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, recordTypeFilter, hideInsufficientData, daysLiveFilter, summary]);
 
   const filteredData = acvData.filter(item => {
     // Variance filter
@@ -643,6 +653,13 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       return false;
     }
 
+    // Record type filter
+    if (recordTypeFilter !== 'all') {
+      const recordType = item.opportunityRecordType === 'New Business' ? 'New Business' : 'Existing';
+      if (recordType !== recordTypeFilter) {
+        return false;
+      }
+    }
 
     // Days live filter
     if (daysLiveFilter !== 'all') {
@@ -712,6 +729,25 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     return counts;
   }, [acvData, hideInsufficientData, daysLiveFilter, excludedMerchants]);
 
+  // Get unique record types and counts
+  const recordTypeCounts = React.useMemo(() => {
+    const counts: { [key: string]: number } = {};
+    let dataToCount = acvData;
+    // Apply days live filter
+    if (daysLiveFilter !== 'all') {
+      const daysLiveThreshold = parseInt(daysLiveFilter);
+      dataToCount = dataToCount.filter(item => item.daysLive >= daysLiveThreshold);
+    }
+    // Exclude merchants that are excluded
+    dataToCount = dataToCount.filter(item => !excludedMerchants.has(item.accountId));
+
+    dataToCount.forEach(item => {
+      const recordType = item.opportunityRecordType === 'New Business' ? 'New Business' : 'Existing';
+      counts[recordType] = (counts[recordType] || 0) + 1;
+    });
+    return counts;
+  }, [acvData, hideInsufficientData, daysLiveFilter, excludedMerchants]);
+
   // Calculate stratified statistics by Labels Paid By and Pricing Model
   const stratifiedStats = React.useMemo(() => {
     // Filter data based on current filters (but not excludedMerchants yet)
@@ -731,6 +767,13 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       // Merchant segment filter
       if (merchantSegmentFilter !== 'all' && (item.merchantSegment || 'Unknown') !== merchantSegmentFilter) {
         return false;
+      }
+      // Record type filter
+      if (recordTypeFilter !== 'all') {
+        const recordType = item.opportunityRecordType === 'New Business' ? 'New Business' : 'Existing';
+        if (recordType !== recordTypeFilter) {
+          return false;
+        }
       }
       // Days live filter
       if (daysLiveFilter !== 'all') {
@@ -836,7 +879,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         totalAcvVariance: insufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0) - insufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0)
       }
     };
-  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, hideInsufficientData, daysLiveFilter]);
+  }, [acvData, excludedMerchants, varianceFilter, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, recordTypeFilter, hideInsufficientData, daysLiveFilter]);
 
   // Calculate variance magnitude stratified statistics
   const varianceStratifiedStats = React.useMemo(() => {
@@ -854,6 +897,13 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       // Merchant segment filter
       if (merchantSegmentFilter !== 'all' && (item.merchantSegment || 'Unknown') !== merchantSegmentFilter) {
         return false;
+      }
+      // Record type filter
+      if (recordTypeFilter !== 'all') {
+        const recordType = item.opportunityRecordType === 'New Business' ? 'New Business' : 'Existing';
+        if (recordType !== recordTypeFilter) {
+          return false;
+        }
       }
       // Days live filter
       if (daysLiveFilter !== 'all') {
@@ -966,7 +1016,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       totalProjectedNetAcv: includedData.reduce((sum, item) => sum + item.projectedNetAcv, 0),
       totalAcvVariance: includedData.reduce((sum, item) => sum + item.projectedNetAcv, 0) - includedData.reduce((sum, item) => sum + item.originalNetAcv, 0)
     };
-  }, [acvData, excludedMerchants, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, daysLiveFilter]);
+  }, [acvData, excludedMerchants, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, recordTypeFilter, daysLiveFilter]);
 
   // Calculate merchant segment statistics
   const merchantSegmentStats = React.useMemo(() => {
@@ -978,6 +1028,13 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       if (pricingModelFilter !== 'all' && item.pricingModel !== pricingModelFilter) return false;
       if (labelsPaidByFilter !== 'all' && item.labelsPaidBy !== labelsPaidByFilter) return false;
       if (merchantSegmentFilter !== 'all' && (item.merchantSegment || 'Unknown') !== merchantSegmentFilter) return false;
+      // Record type filter
+      if (recordTypeFilter !== 'all') {
+        const recordType = item.opportunityRecordType === 'New Business' ? 'New Business' : 'Existing';
+        if (recordType !== recordTypeFilter) {
+          return false;
+        }
+      }
       if (daysLiveFilter !== 'all') {
         const threshold = parseInt(daysLiveFilter);
         if (item.daysLive < threshold) return false;
@@ -1055,7 +1112,94 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       sufficientTotals,
       insufficientTotals
     };
-  }, [acvData, excludedMerchants, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, daysLiveFilter]);
+  }, [acvData, excludedMerchants, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, recordTypeFilter, daysLiveFilter]);
+
+  // Calculate opportunity record type statistics
+  const opportunityRecordTypeStats = React.useMemo(() => {
+    if (!acvData || acvData.length === 0) return { recordTypeStats: [], sufficientTotals: null, insufficientTotals: null };
+
+    // Filter data based on current filters
+    const includedData = acvData.filter(item => {
+      if (excludedMerchants.has(item.accountId)) return false;
+      if (pricingModelFilter !== 'all' && item.pricingModel !== pricingModelFilter) return false;
+      if (labelsPaidByFilter !== 'all' && item.labelsPaidBy !== labelsPaidByFilter) return false;
+      if (merchantSegmentFilter !== 'all' && (item.merchantSegment || 'Unknown') !== merchantSegmentFilter) return false;
+      // Record type filter
+      if (recordTypeFilter !== 'all') {
+        const recordType = item.opportunityRecordType === 'New Business' ? 'New Business' : 'Existing';
+        if (recordType !== recordTypeFilter) {
+          return false;
+        }
+      }
+      if (daysLiveFilter !== 'all') {
+        const threshold = parseInt(daysLiveFilter);
+        if (item.daysLive < threshold) return false;
+      }
+      return true;
+    });
+
+    // Group by opportunity record type category and sufficient data status
+    const recordTypeGroups: { [key: string]: AcvImpactData[] } = {};
+    includedData.forEach(item => {
+      // Categorize: "New Business" vs "Existing" (everything else)
+      const recordTypeCategory = item.opportunityRecordType === 'New Business' ? 'New Business' : 'Existing';
+      const key = `${recordTypeCategory}|${item.hasSufficientData ? 'sufficient' : 'insufficient'}`;
+      if (!recordTypeGroups[key]) {
+        recordTypeGroups[key] = [];
+      }
+      recordTypeGroups[key].push(item);
+    });
+
+    // Calculate stats for each record type group
+    const recordTypeStats = Object.entries(recordTypeGroups).map(([key, items]) => {
+      const [recordTypeCategory, dataType] = key.split('|');
+      const totalOriginalNetAcv = items.reduce((sum, item) => sum + item.originalNetAcv, 0);
+      const totalProjectedNetAcv = items.reduce((sum, item) => sum + item.projectedNetAcv, 0);
+      const totalAcvVariance = totalProjectedNetAcv - totalOriginalNetAcv;
+      const avgAcvVariance = items.length > 0 ? totalAcvVariance / items.length : 0;
+
+      return {
+        recordTypeCategory,
+        dataType: dataType as 'sufficient' | 'insufficient',
+        merchantCount: items.length,
+        totalOriginalNetAcv,
+        totalProjectedNetAcv,
+        totalAcvVariance,
+        avgAcvVariance,
+        variancePercent: totalOriginalNetAcv !== 0 ? (totalProjectedNetAcv / totalOriginalNetAcv) * 100 : 0
+      };
+    }).filter(group => group.merchantCount > 0).sort((a, b) => {
+      // Sort by record type category first (New Business first), then by data type (sufficient first)
+      if (a.recordTypeCategory !== b.recordTypeCategory) {
+        return a.recordTypeCategory === 'New Business' ? -1 : 1;
+      }
+      return a.dataType === 'sufficient' ? -1 : 1;
+    });
+
+    // Calculate totals for sufficient and insufficient data separately
+    const sufficientData = includedData.filter(item => item.hasSufficientData);
+    const insufficientData = includedData.filter(item => !item.hasSufficientData);
+
+    const sufficientTotals = sufficientData.length > 0 ? {
+      merchantCount: sufficientData.length,
+      totalOriginalNetAcv: sufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0),
+      totalProjectedNetAcv: sufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0),
+      totalAcvVariance: sufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0) - sufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0)
+    } : null;
+
+    const insufficientTotals = insufficientData.length > 0 ? {
+      merchantCount: insufficientData.length,
+      totalOriginalNetAcv: insufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0),
+      totalProjectedNetAcv: insufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0),
+      totalAcvVariance: insufficientData.reduce((sum, item) => sum + item.projectedNetAcv, 0) - insufficientData.reduce((sum, item) => sum + item.originalNetAcv, 0)
+    } : null;
+
+    return {
+      recordTypeStats,
+      sufficientTotals,
+      insufficientTotals
+    };
+  }, [acvData, excludedMerchants, pricingModelFilter, labelsPaidByFilter, merchantSegmentFilter, recordTypeFilter, daysLiveFilter]);
 
   if (loading) {
     return (
@@ -1322,6 +1466,32 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                 variant={merchantSegmentFilter === segment ? 'filled' : 'outlined'}
               />
             ))}
+        </Box>
+      </Box>
+
+      {/* Record Type Filter Chips */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="subtitle1" gutterBottom>
+          Opportunity Record Type
+        </Typography>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          <Chip
+            label={`All (${Object.values(recordTypeCounts).reduce((a, b) => a + b, 0)})`}
+            onClick={() => setRecordTypeFilter('all')}
+            color={recordTypeFilter === 'all' ? 'primary' : 'default'}
+            variant={recordTypeFilter === 'all' ? 'filled' : 'outlined'}
+          />
+          {['New Business', 'Existing'].map(recordType => (
+            recordTypeCounts[recordType] ? (
+              <Chip
+                key={recordType}
+                label={`${recordType} (${recordTypeCounts[recordType]})`}
+                onClick={() => setRecordTypeFilter(recordType)}
+                color={recordTypeFilter === recordType ? 'primary' : 'default'}
+                variant={recordTypeFilter === recordType ? 'filled' : 'outlined'}
+              />
+            ) : null
+          ))}
         </Box>
       </Box>
 
@@ -1859,6 +2029,249 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         </CardContent>
       </Card>
 
+      {/* Opportunity Record Type Summary */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            ACV Variance Summary by Opportunity Record Type
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            ACV impact comparison between New Business and Existing opportunities (Renewal, Mid-Term Change, etc.)
+          </Typography>
+          <TableContainer component={Paper}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Record Type</strong></TableCell>
+                  <TableCell align="right"><strong>Merchants</strong></TableCell>
+                  <TableCell align="right"><strong>Original Net ACV</strong></TableCell>
+                  <TableCell align="right"><strong>Projected Net ACV</strong></TableCell>
+                  <TableCell align="right"><strong>ACV Variance</strong></TableCell>
+                  <TableCell align="right"><strong>% of Original</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {/* Sufficient Data Groups */}
+                {opportunityRecordTypeStats.recordTypeStats.filter(group => group.dataType === 'sufficient').length > 0 && (
+                  <>
+                    <TableRow sx={{ backgroundColor: 'success.light', '& td': { fontWeight: 'bold', color: 'success.dark' } }}>
+                      <TableCell colSpan={6} align="left">
+                        <Typography variant="subtitle2" fontWeight="bold">
+                          SUFFICIENT DATA MERCHANTS (Updated Projections)
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                    {opportunityRecordTypeStats.recordTypeStats
+                      .filter(group => group.dataType === 'sufficient')
+                      .map((group, index) => (
+                        <TableRow
+                          key={`${group.recordTypeCategory}-sufficient`}
+                          sx={{
+                            backgroundColor: index % 2 === 0 ? 'action.hover' : 'inherit',
+                            '&:hover': { backgroundColor: 'action.selected' }
+                          }}
+                        >
+                          <TableCell>
+                            <Chip
+                              label={group.recordTypeCategory}
+                              size="small"
+                              color={group.recordTypeCategory === 'New Business' ? 'primary' : 'secondary'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell align="right">{group.merchantCount}</TableCell>
+                          <TableCell align="right">{formatCurrency(group.totalOriginalNetAcv)}</TableCell>
+                          <TableCell align="right">{formatCurrency(group.totalProjectedNetAcv)}</TableCell>
+                          <TableCell align="right">
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                              {group.totalAcvVariance >= 0 ? (
+                                <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                              ) : (
+                                <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                              )}
+                              <Typography
+                                variant="body2"
+                                color={group.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                                fontWeight="medium"
+                              >
+                                {formatCurrency(group.totalAcvVariance)}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography
+                              variant="body2"
+                              color={group.variancePercent >= 100 ? 'success.main' : 'error.main'}
+                              fontWeight="medium"
+                            >
+                              {group.variancePercent.toFixed(1)}%
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    {/* Sufficient Data Subtotal */}
+                    {opportunityRecordTypeStats.sufficientTotals && (
+                      <TableRow sx={{ backgroundColor: 'success.light', '& td': { fontWeight: 'bold' } }}>
+                        <TableCell><strong>SUFFICIENT DATA SUBTOTAL</strong></TableCell>
+                        <TableCell align="right">{opportunityRecordTypeStats.sufficientTotals.merchantCount}</TableCell>
+                        <TableCell align="right">{formatCurrency(opportunityRecordTypeStats.sufficientTotals.totalOriginalNetAcv)}</TableCell>
+                        <TableCell align="right">{formatCurrency(opportunityRecordTypeStats.sufficientTotals.totalProjectedNetAcv)}</TableCell>
+                        <TableCell align="right">
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                            {opportunityRecordTypeStats.sufficientTotals.totalAcvVariance >= 0 ? (
+                              <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                            ) : (
+                              <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                            )}
+                            <Typography
+                              variant="body2"
+                              color={opportunityRecordTypeStats.sufficientTotals.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                              fontWeight="bold"
+                            >
+                              {formatCurrency(opportunityRecordTypeStats.sufficientTotals.totalAcvVariance)}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography
+                            variant="body2"
+                            color={opportunityRecordTypeStats.sufficientTotals.totalOriginalNetAcv !== 0 &&
+                                   (opportunityRecordTypeStats.sufficientTotals.totalProjectedNetAcv / opportunityRecordTypeStats.sufficientTotals.totalOriginalNetAcv) * 100 >= 100 ?
+                                   'success.main' : 'error.main'}
+                            fontWeight="bold"
+                          >
+                            {opportunityRecordTypeStats.sufficientTotals.totalOriginalNetAcv !== 0 ?
+                              `${((opportunityRecordTypeStats.sufficientTotals.totalProjectedNetAcv / opportunityRecordTypeStats.sufficientTotals.totalOriginalNetAcv) * 100).toFixed(1)}%` :
+                              'N/A'}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
+                )}
+
+                {/* Insufficient Data Groups */}
+                {opportunityRecordTypeStats.recordTypeStats.filter(group => group.dataType === 'insufficient').length > 0 && (
+                  <>
+                    <TableRow sx={{ backgroundColor: 'grey.300', '& td': { fontWeight: 'bold', color: 'grey.800' } }}>
+                      <TableCell colSpan={6} align="left">
+                        <Typography variant="subtitle2" fontWeight="bold">
+                          INSUFFICIENT DATA MERCHANTS (Original Projections)
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                    {opportunityRecordTypeStats.recordTypeStats
+                      .filter(group => group.dataType === 'insufficient')
+                      .map((group, index) => (
+                        <TableRow
+                          key={`${group.recordTypeCategory}-insufficient`}
+                          sx={{
+                            backgroundColor: index % 2 === 0 ? 'grey.200' : 'inherit',
+                            '&:hover': { backgroundColor: 'action.selected' }
+                          }}
+                        >
+                          <TableCell>
+                            <Chip
+                              label={group.recordTypeCategory}
+                              size="small"
+                              color="default"
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell align="right">{group.merchantCount}</TableCell>
+                          <TableCell align="right">{formatCurrency(group.totalOriginalNetAcv)}</TableCell>
+                          <TableCell align="right">{formatCurrency(group.totalProjectedNetAcv)}</TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" color="text.secondary" fontWeight="medium">
+                              {formatCurrency(group.totalAcvVariance)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" color="text.secondary" fontWeight="medium">
+                              {group.variancePercent.toFixed(1)}%
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    {/* Insufficient Data Subtotal */}
+                    {opportunityRecordTypeStats.insufficientTotals && (
+                      <TableRow sx={{ backgroundColor: 'grey.300', '& td': { fontWeight: 'bold' } }}>
+                        <TableCell><strong>INSUFFICIENT DATA SUBTOTAL</strong></TableCell>
+                        <TableCell align="right">{opportunityRecordTypeStats.insufficientTotals.merchantCount}</TableCell>
+                        <TableCell align="right">{formatCurrency(opportunityRecordTypeStats.insufficientTotals.totalOriginalNetAcv)}</TableCell>
+                        <TableCell align="right">{formatCurrency(opportunityRecordTypeStats.insufficientTotals.totalProjectedNetAcv)}</TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" color="text.secondary" fontWeight="bold">
+                            {formatCurrency(opportunityRecordTypeStats.insufficientTotals.totalAcvVariance)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" color="text.secondary" fontWeight="bold">
+                            {opportunityRecordTypeStats.insufficientTotals.totalOriginalNetAcv !== 0 ?
+                              `${((opportunityRecordTypeStats.insufficientTotals.totalProjectedNetAcv / opportunityRecordTypeStats.insufficientTotals.totalOriginalNetAcv) * 100).toFixed(1)}%` :
+                              'N/A'}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
+                )}
+
+                {/* Grand Total Row */}
+                {(opportunityRecordTypeStats.sufficientTotals || opportunityRecordTypeStats.insufficientTotals) && displaySummary && (
+                  <TableRow sx={{ backgroundColor: 'primary.light', '& td': { fontWeight: 'bold' } }}>
+                    <TableCell><strong>GRAND TOTAL</strong></TableCell>
+                    <TableCell align="right">{displaySummary.totalMerchants}</TableCell>
+                    <TableCell align="right">{formatCurrency(displaySummary.totalOriginalNetAcv)}</TableCell>
+                    <TableCell align="right">{formatCurrency(displaySummary.totalProjectedNetAcv)}</TableCell>
+                    <TableCell align="right">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                        {displaySummary.totalAcvVariance >= 0 ? (
+                          <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                        ) : (
+                          <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                        )}
+                        <Typography
+                          variant="body2"
+                          color={displaySummary.totalAcvVariance >= 0 ? 'success.main' : 'error.main'}
+                          fontWeight="bold"
+                        >
+                          {formatCurrency(displaySummary.totalAcvVariance)}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={displaySummary.totalOriginalNetAcv !== 0 &&
+                               (displaySummary.totalProjectedNetAcv / displaySummary.totalOriginalNetAcv) * 100 >= 100 ?
+                               'success.main' : 'error.main'}
+                        fontWeight="bold"
+                      >
+                        {displaySummary.totalOriginalNetAcv !== 0 ?
+                          `${((displaySummary.totalProjectedNetAcv / displaySummary.totalOriginalNetAcv) * 100).toFixed(1)}%` :
+                          'N/A'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {/* No Data Row */}
+                {opportunityRecordTypeStats.recordTypeStats.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No data available for current filters
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
+
       {/* Variance Magnitude Stratified Summary */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
@@ -2115,6 +2528,111 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                 </TableRow>
               </TableHead>
               <TableBody>
+                {/* Total Row */}
+                {(() => {
+                  const nonExcludedData = filteredData.filter(row => !excludedMerchants.has(row.accountId));
+                  const totals = nonExcludedData.reduce((acc, row) => ({
+                    merchantCount: acc.merchantCount + 1,
+                    totalDaysLive: acc.totalDaysLive + row.daysLive,
+                    totalOriginalEndingAcv: acc.totalOriginalEndingAcv + row.originalEndingAcv,
+                    totalProjectedEndingAcv: acc.totalProjectedEndingAcv + row.projectedEndingAcv,
+                    totalOriginalNetAcv: acc.totalOriginalNetAcv + row.originalNetAcv,
+                    totalProjectedNetAcv: acc.totalProjectedNetAcv + row.projectedNetAcv,
+                    totalAcvVariance: acc.totalAcvVariance + row.acvVariance
+                  }), {
+                    merchantCount: 0,
+                    totalDaysLive: 0,
+                    totalOriginalEndingAcv: 0,
+                    totalProjectedEndingAcv: 0,
+                    totalOriginalNetAcv: 0,
+                    totalProjectedNetAcv: 0,
+                    totalAcvVariance: 0
+                  });
+
+                  const avgDaysLive = totals.merchantCount > 0 ? Math.round(totals.totalDaysLive / totals.merchantCount) : 0;
+                  const variancePercent = totals.totalOriginalNetAcv !== 0 ?
+                    ((totals.totalProjectedNetAcv / totals.totalOriginalNetAcv) * 100) : 0;
+
+                  return totals.merchantCount > 0 ? (
+                    <TableRow
+                      sx={{
+                        backgroundColor: 'grey.100',
+                        '& .MuiTableCell-root': { fontWeight: 'bold' }
+                      }}
+                    >
+                      <TableCell padding="checkbox">
+                        <Typography variant="caption" fontWeight="bold" color="text.primary">
+                          TOTAL
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight="bold" color="text.primary">
+                          {totals.merchantCount} merchants
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight="bold" color="text.primary">
+                          {avgDaysLive} avg
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight="bold" color="text.primary">
+                          {formatCurrency(totals.totalOriginalEndingAcv)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight="bold" color="text.primary">
+                          {formatCurrency(totals.totalProjectedEndingAcv)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight="bold" color="text.primary">
+                          {formatCurrency(totals.totalOriginalNetAcv)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight="bold" color="text.primary">
+                          {formatCurrency(totals.totalProjectedNetAcv)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          {totals.totalAcvVariance >= 0 ? (
+                            <TrendingUpIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                          ) : (
+                            <TrendingDownIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                          )}
+                          <Typography
+                            variant="body2"
+                            color="text.primary"
+                            fontWeight="bold"
+                          >
+                            {totals.totalAcvVariance >= 0 ? '+' : ''}{formatCurrency(totals.totalAcvVariance)}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography
+                          variant="body2"
+                          color="text.primary"
+                          fontWeight="bold"
+                        >
+                          {variancePercent.toFixed(1)}%
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography
+                          variant="body2"
+                          color="text.primary"
+                          fontWeight="bold"
+                        >
+                          {totals.merchantCount} merchants
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ) : null;
+                })()}
+
                 {filteredData.map((row) => (
                   <TableRow
                     key={row.accountId}
