@@ -77,6 +77,18 @@ checkout-plus/
    - Login/logout UI with user display in dashboard header
    - Credentials stored securely in Replit Secrets (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
 
+9. **Production Security Hardening** (Oct 1, 2025):
+   - **Redirect URI Security**: Changed from header-based to environment-variable-based configuration
+     - Priority: OAUTH_REDIRECT_URI env → REPLIT_DEPLOYMENT_URL (prod) → localhost:3001 (dev)
+     - Production throws error if neither OAUTH_REDIRECT_URI nor REPLIT_DEPLOYMENT_URL is set
+   - **Session Fixation Prevention**: Added session.regenerate() after successful OAuth verification
+   - **Persistent Session Storage**: Configured PostgreSQL session store for production
+     - Uses connect-pg-simple with automatic session table creation
+     - Requires DATABASE_URL environment variable in production (fails fast if missing)
+     - SSL certificate verification enabled by default (can be disabled via DATABASE_SSL_REJECT_UNAUTHORIZED='false')
+     - Falls back to MemoryStore in development only
+   - **Type Safety**: Session type augmentation consolidated in server.ts for ts-node compatibility
+
 ## Development
 
 ### Running the Application
@@ -124,9 +136,25 @@ The application requires three types of CSV data:
 
 Upload these files through the web interface.
 
+## Production Environment Variables
+
+When deploying to production, the following environment variables are required:
+
+### Required
+- `GOOGLE_CLIENT_ID`: Google OAuth 2.0 client ID (already in Replit Secrets)
+- `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 client secret (already in Replit Secrets)
+- `DATABASE_URL`: PostgreSQL connection string for persistent session storage
+- `SESSION_SECRET`: Cryptographically secure random string for session encryption
+- `REPLIT_DEPLOYMENT_URL`: Auto-set by Replit, or use `OAUTH_REDIRECT_URI` to override
+- `NODE_ENV`: Set to `production`
+
+### Optional
+- `OAUTH_REDIRECT_URI`: Override OAuth redirect URI (takes precedence over REPLIT_DEPLOYMENT_URL)
+- `FRONTEND_URL`: Override CORS allowed origin (defaults to deployment URL)
+- `DATABASE_SSL_REJECT_UNAUTHORIZED`: Set to `'false'` to disable SSL cert verification (not recommended)
+
 ## User Preferences
 - None specified yet
 
 ## Known Issues
 - Frontend has ESLint warnings for unused variables and missing hook dependencies (non-blocking)
-- No production environment variables configured yet
