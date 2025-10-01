@@ -5,7 +5,10 @@ const getApiBaseUrl = () => {
   
   const replitDomain = process.env.REACT_APP_REPLIT_DEV_DOMAIN;
   if (replitDomain) {
-    return `https://${replitDomain}:3001`;
+    const port = window.location.port || '5000';
+    const url = window.location.origin;
+    const baseUrl = url.replace(`:${port}`, ':3001');
+    return baseUrl;
   }
   
   return 'http://localhost:3001';
