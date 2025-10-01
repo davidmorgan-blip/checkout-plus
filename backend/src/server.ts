@@ -1,23 +1,77 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import session from 'express-session';
+import cookieParser from 'cookie-parser';
 import { database } from './utils/database';
 import uploadRoutes from './routes/upload';
 import analyticsRoutes from './routes/analytics';
 import netRevenueRoutes from './routes/net-revenue';
+import authRoutes from './routes/auth';
+
+declare module 'express-session' {
+  interface SessionData {
+    user?: {
+      email: string;
+      name: string;
+      picture?: string;
+      domain: string;
+    };
+    oauthState?: string;
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
+app.set('trust proxy', 1);
+
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+  ? [process.env.FRONTEND_URL || 'https://checkout-plus.replit.app']
+  : ['http://localhost:5000', 'http://localhost:3000'];
+
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+app.use(cookieParser());
+app.use(session({
+  secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? (() => { throw new Error('SESSION_SECRET required in production'); })() : 'dev-secret-change-me'),
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000
+  }
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// API Routes
-app.use('/api/upload', uploadRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/net-revenue', netRevenueRoutes);
+// Authentication middleware
+const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.session?.user) {
+    next();
+  } else {
+    res.status(401).json({ error: 'Unauthorized', message: 'Please log in' });
+  }
+};
+
+// Auth Routes (no auth required)
+app.use('/auth', authRoutes);
+
+// API Routes (protected by auth)
+app.use('/api/upload', requireAuth, uploadRoutes);
+app.use('/api/analytics', requireAuth, analyticsRoutes);
+app.use('/api/net-revenue', requireAuth, netRevenueRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

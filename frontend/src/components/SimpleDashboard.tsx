@@ -27,6 +27,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import LogoutIcon from '@mui/icons-material/Logout';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import PerformanceOverview from './PerformanceOverview';
 import VolumeAnalysis from './VolumeAnalysis';
 import NetRevenueAnalysis from './NetRevenueAnalysis';
@@ -82,7 +84,18 @@ interface FileUploadState {
   error: string | null;
 }
 
-export default function SimpleDashboard() {
+interface User {
+  email: string;
+  name: string;
+  picture?: string;
+  domain: string;
+}
+
+interface SimpleDashboardProps {
+  user: User | null;
+}
+
+export default function SimpleDashboard({ user }: SimpleDashboardProps) {
   const [tabValue, setTabValue] = useState(0); // Start with Net Revenue tab (will fallback to Data Upload if disabled)
   const [userSelectedTab, setUserSelectedTab] = useState(false); // Track if user manually selected a tab
   const [daysLiveFilter, setDaysLiveFilter] = useState('all'); // Days live filter for ACV Impacts tab
@@ -385,6 +398,22 @@ export default function SimpleDashboard() {
           <Typography variant="body2" sx={{ mr: 2 }}>
             {dataLoaded ? `${uploadStatus.opportunities} merchants` : 'No data loaded'}
           </Typography>
+          {user && (
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', mr: 2 }}>
+                <AccountCircleIcon sx={{ mr: 1 }} />
+                <Typography variant="body2">{user.name}</Typography>
+              </Box>
+              <Button
+                color="inherit"
+                startIcon={<LogoutIcon />}
+                onClick={() => window.location.href = '/auth/logout'}
+                sx={{ textTransform: 'none' }}
+              >
+                Logout
+              </Button>
+            </>
+          )}
         </Toolbar>
       </AppBar>
 
