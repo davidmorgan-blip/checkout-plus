@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 import { database } from './utils/database';
 import uploadRoutes from './routes/upload';
 import analyticsRoutes from './routes/analytics';
@@ -13,7 +14,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
+// API Routes
 app.use('/api/upload', uploadRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/net-revenue', netRevenueRoutes);
@@ -46,6 +47,25 @@ app.get('/api', (req, res) => {
   });
 });
 
+// Serve static files from frontend build in production
+if (process.env.NODE_ENV === 'production') {
+  const frontendBuildPath = path.join(__dirname, '../../frontend/build');
+  app.use(express.static(frontendBuildPath));
+  
+  // Serve index.html for all non-API routes (client-side routing)
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendBuildPath, 'index.html'));
+  });
+} else {
+  // 404 handler for development
+  app.use((req, res) => {
+    res.status(404).json({
+      success: false,
+      error: 'Endpoint not found'
+    });
+  });
+}
+
 // Error handling middleware
 app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Server error:', error);
@@ -53,14 +73,6 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
     success: false,
     error: 'Internal server error',
     details: process.env.NODE_ENV === 'development' ? error.message : undefined
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Endpoint not found'
   });
 });
 
