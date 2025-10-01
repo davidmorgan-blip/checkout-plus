@@ -66,6 +66,17 @@ checkout-plus/
    - Simplified API base URL to use relative URLs in all environments
    - Added Create React App proxy to forward /api requests to backend in development
 
+8. **Google Workspace SSO Authentication** (Oct 1, 2025):
+   - Implemented OAuth 2.0 authentication with Google
+   - Domain restricted to @loopreturns.com accounts only
+   - Server-side domain validation (validates `hd` field in ID token)
+   - Secure session management with httpOnly, SameSite: 'lax', and secure cookies
+   - OAuth CSRF protection with cryptographic state parameter
+   - CORS restricted to allowed origins (localhost in dev, configurable in prod)
+   - All API routes protected by authentication middleware
+   - Login/logout UI with user display in dashboard header
+   - Credentials stored securely in Replit Secrets (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+
 ## Development
 
 ### Running the Application
