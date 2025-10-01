@@ -27,7 +27,8 @@ import {
   Link,
   FormControlLabel,
   Switch,
-  Button
+  Button,
+  Collapse
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -36,6 +37,8 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import WarningIcon from '@mui/icons-material/Warning';
 import DownloadIcon from '@mui/icons-material/Download';
 import LaunchIcon from '@mui/icons-material/Launch';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import * as XLSX from 'xlsx';
 
 interface AcvImpactData {
@@ -92,6 +95,12 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   const [recordTypeFilter, setRecordTypeFilter] = useState('all');
   const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
   const [hideInsufficientData, setHideInsufficientData] = useState(false);
+
+  // Collapsible summary table states
+  const [pricingModelSummaryExpanded, setPricingModelSummaryExpanded] = useState(true);
+  const [merchantSegmentSummaryExpanded, setMerchantSegmentSummaryExpanded] = useState(true);
+  const [recordTypeSummaryExpanded, setRecordTypeSummaryExpanded] = useState(true);
+  const [performanceTierSummaryExpanded, setPerformanceTierSummaryExpanded] = useState(true);
 
   const renderMerchantWithLinks = (merchantName: string, accountId: string, opportunityId: string, pricingInfo?: string) => (
     <Box>
@@ -1543,12 +1552,21 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       {/* Stratified ACV Variance Summary */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            ACV Variance Summary by Pricing Model & Labels Paid By
-          </Typography>
+          <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+              ACV Variance Summary by Pricing Model & Labels Paid By
+            </Typography>
+            <IconButton
+              onClick={() => setPricingModelSummaryExpanded(!pricingModelSummaryExpanded)}
+              size="small"
+            >
+              {pricingModelSummaryExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Subtotals showing ACV variance distribution across different merchant segments
           </Typography>
+          <Collapse in={pricingModelSummaryExpanded}>
           <TableContainer component={Paper}>
             <Table size="small">
               <TableHead>
@@ -1781,18 +1799,28 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
               </TableBody>
             </Table>
           </TableContainer>
+          </Collapse>
         </CardContent>
       </Card>
 
       {/* Merchant Segment Summary */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            ACV Variance Summary by Merchant Segment
-          </Typography>
+          <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+              ACV Variance Summary by Merchant Segment
+            </Typography>
+            <IconButton
+              onClick={() => setMerchantSegmentSummaryExpanded(!merchantSegmentSummaryExpanded)}
+              size="small"
+            >
+              {merchantSegmentSummaryExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Merchant distribution and ACV impact across merchant segments
           </Typography>
+          <Collapse in={merchantSegmentSummaryExpanded}>
           <TableContainer component={Paper}>
             <Table size="small">
               <TableHead>
@@ -2026,18 +2054,28 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
               </TableBody>
             </Table>
           </TableContainer>
+          </Collapse>
         </CardContent>
       </Card>
 
       {/* Opportunity Record Type Summary */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            ACV Variance Summary by Opportunity Record Type
-          </Typography>
+          <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+              ACV Variance Summary by Opportunity Record Type
+            </Typography>
+            <IconButton
+              onClick={() => setRecordTypeSummaryExpanded(!recordTypeSummaryExpanded)}
+              size="small"
+            >
+              {recordTypeSummaryExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             ACV impact comparison between New Business and Existing opportunities (Renewal, Mid-Term Change, etc.)
           </Typography>
+          <Collapse in={recordTypeSummaryExpanded}>
           <TableContainer component={Paper}>
             <Table size="small">
               <TableHead>
@@ -2269,18 +2307,28 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
               </TableBody>
             </Table>
           </TableContainer>
+          </Collapse>
         </CardContent>
       </Card>
 
       {/* Variance Magnitude Stratified Summary */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            ACV Variance Summary by Performance Tier
-          </Typography>
+          <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+              ACV Variance Summary by Performance Tier
+            </Typography>
+            <IconButton
+              onClick={() => setPerformanceTierSummaryExpanded(!performanceTierSummaryExpanded)}
+              size="small"
+            >
+              {performanceTierSummaryExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Merchant distribution and ACV impact across performance variance tiers
           </Typography>
+          <Collapse in={performanceTierSummaryExpanded}>
           <TableContainer component={Paper}>
             <Table size="small">
               <TableHead>
@@ -2479,6 +2527,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
               </TableBody>
             </Table>
           </TableContainer>
+          </Collapse>
         </CardContent>
       </Card>
 

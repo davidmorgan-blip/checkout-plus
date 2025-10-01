@@ -86,6 +86,8 @@ interface WeeklyTrend {
   actual_weekly_orders: number;
   benchmark_vertical: string;
   labels_paid_by: string;
+  merchant_segment: string;
+  opportunity_record_type: string;
   expected_weekly_orders: number;
   expected_adoption_rate: number;
   actual_adoption_rate: number;
@@ -100,6 +102,8 @@ interface ForecastData {
   merchant_name: string;
   benchmark_vertical: string;
   labels_paid_by: string;
+  merchant_segment: string;
+  opportunity_record_type: string;
   trailing_4week_avg_orders: number;
   expected_weekly_orders: number;
   days_live: number;
@@ -156,6 +160,8 @@ export default function VolumeAnalysis() {
   const [error, setError] = useState<string | null>(null);
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
   const [forecastTierFilter, setForecastTierFilter] = useState('all');
+  const [merchantSegmentFilter, setMerchantSegmentFilter] = useState('all');
+  const [recordTypeFilter, setRecordTypeFilter] = useState('all');
   const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
   const [forecastChartExpanded, setForecastChartExpanded] = useState(true);
 
@@ -234,6 +240,53 @@ export default function VolumeAnalysis() {
     };
   };
 
+  // Get merchant segment counts
+  const getMerchantSegmentCounts = () => {
+    if (!volumeData) return {};
+
+    const merchantData = getMerchantWeeklyData();
+    const counts: { [key: string]: number } = {};
+
+    // Apply current filters except merchant segment
+    const filteredData = merchantData.filter(merchant => {
+      if (excludedMerchants.has(merchant.salesforce_account_id)) return false;
+      if (recordTypeFilter !== 'all') {
+        const recordType = merchant.opportunity_record_type === 'New Business' ? 'New Business' : 'Existing';
+        if (recordType !== recordTypeFilter) return false;
+      }
+      return true;
+    });
+
+    filteredData.forEach(merchant => {
+      const segment = merchant.merchant_segment || 'Unknown';
+      counts[segment] = (counts[segment] || 0) + 1;
+    });
+
+    return counts;
+  };
+
+  // Get record type counts
+  const getRecordTypeCounts = () => {
+    if (!volumeData) return {};
+
+    const merchantData = getMerchantWeeklyData();
+    const counts: { [key: string]: number } = {};
+
+    // Apply current filters except record type
+    const filteredData = merchantData.filter(merchant => {
+      if (excludedMerchants.has(merchant.salesforce_account_id)) return false;
+      if (merchantSegmentFilter !== 'all' && (merchant.merchant_segment || 'Unknown') !== merchantSegmentFilter) return false;
+      return true;
+    });
+
+    filteredData.forEach(merchant => {
+      const recordType = merchant.opportunity_record_type === 'New Business' ? 'New Business' : 'Existing';
+      counts[recordType] = (counts[recordType] || 0) + 1;
+    });
+
+    return counts;
+  };
+
   // Generate 12-month forecast data for chart visualization
   const generateForecastChartData = () => {
     if (!volumeData) return null;
@@ -252,6 +305,15 @@ export default function VolumeAnalysis() {
 
       // Apply merchant filter
       if (merchantFilter && forecast.merchant_name !== merchantFilter) return false;
+
+      // Apply merchant segment filter
+      if (merchantSegmentFilter !== 'all' && (forecast.merchant_segment || 'Unknown') !== merchantSegmentFilter) return false;
+
+      // Apply record type filter
+      if (recordTypeFilter !== 'all') {
+        const recordType = forecast.opportunity_record_type === 'New Business' ? 'New Business' : 'Existing';
+        if (recordType !== recordTypeFilter) return false;
+      }
 
       return true;
     });
@@ -277,7 +339,9 @@ export default function VolumeAnalysis() {
         // Get actuals from weekly trends data
         const filteredMerchantData = merchantData.filter(merchant =>
           !excludedMerchants.has(merchant.salesforce_account_id) &&
-          (!merchantFilter || merchant.merchant_name === merchantFilter)
+          (!merchantFilter || merchant.merchant_name === merchantFilter) &&
+          (merchantSegmentFilter === 'all' || (merchant.merchant_segment || 'Unknown') === merchantSegmentFilter) &&
+          (recordTypeFilter === 'all' || (merchant.opportunity_record_type === 'New Business' ? 'New Business' : 'Existing') === recordTypeFilter)
         );
 
         filteredMerchantData.forEach(merchant => {
@@ -529,7 +593,20 @@ export default function VolumeAnalysis() {
 
   // Filter function for merchant data
   const getMerchantWeeklyDataFiltered = () => {
-    return getMerchantWeeklyData().filter(merchant => !excludedMerchants.has(merchant.salesforce_account_id));
+    return getMerchantWeeklyData().filter(merchant => {
+      if (excludedMerchants.has(merchant.salesforce_account_id)) return false;
+
+      // Apply merchant segment filter
+      if (merchantSegmentFilter !== 'all' && (merchant.merchant_segment || 'Unknown') !== merchantSegmentFilter) return false;
+
+      // Apply record type filter
+      if (recordTypeFilter !== 'all') {
+        const recordType = merchant.opportunity_record_type === 'New Business' ? 'New Business' : 'Existing';
+        if (recordType !== recordTypeFilter) return false;
+      }
+
+      return true;
+    });
   };
 
   const merchantData = getMerchantWeeklyData();
@@ -638,7 +715,7 @@ export default function VolumeAnalysis() {
       </Typography>
 
       {/* Filter Controls */}
-      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
+      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>Days Live Filter</InputLabel>
           <Select
@@ -654,6 +731,50 @@ export default function VolumeAnalysis() {
             <MenuItem value="90">&gt; 90 Days Live</MenuItem>
           </Select>
         </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 180 }}>
+          <InputLabel>Merchant Segment</InputLabel>
+          <Select
+            value={merchantSegmentFilter}
+            label="Merchant Segment"
+            onChange={(e) => setMerchantSegmentFilter(e.target.value)}
+          >
+            <MenuItem value="all">All Segments</MenuItem>
+            {Object.entries(getMerchantSegmentCounts())
+              .sort(([a], [b]) => {
+                const order = ['Strategic Enterprise', 'Enterprise', 'Mid-Market', 'SMB'];
+                const aIndex = order.indexOf(a);
+                const bIndex = order.indexOf(b);
+                if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+                if (aIndex !== -1) return -1;
+                if (bIndex !== -1) return 1;
+                return a.localeCompare(b);
+              })
+              .map(([segment, count]) => (
+                <MenuItem key={segment} value={segment}>
+                  {segment} ({count})
+                </MenuItem>
+              ))
+            }
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel>Record Type</InputLabel>
+          <Select
+            value={recordTypeFilter}
+            label="Record Type"
+            onChange={(e) => setRecordTypeFilter(e.target.value)}
+          >
+            <MenuItem value="all">All Types</MenuItem>
+            {Object.entries(getRecordTypeCounts()).map(([recordType, count]) => (
+              <MenuItem key={recordType} value={recordType}>
+                {recordType} ({count})
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
         <Autocomplete
           size="small"
           sx={{ minWidth: 250 }}
@@ -912,7 +1033,7 @@ export default function VolumeAnalysis() {
               </TableRow>
 
               {/* Individual Merchant Rows */}
-              {merchantData.map((merchant) => (
+              {filteredMerchantData.map((merchant) => (
                 <TableRow
                   key={merchant.merchant_name}
                   sx={{
@@ -1068,6 +1189,15 @@ export default function VolumeAnalysis() {
                   // Apply merchant filter
                   if (merchantFilter) {
                     return forecast.merchant_name === merchantFilter;
+                  }
+
+                  // Apply merchant segment filter
+                  if (merchantSegmentFilter !== 'all' && (forecast.merchant_segment || 'Unknown') !== merchantSegmentFilter) return false;
+
+                  // Apply record type filter
+                  if (recordTypeFilter !== 'all') {
+                    const recordType = forecast.opportunity_record_type === 'New Business' ? 'New Business' : 'Existing';
+                    if (recordType !== recordTypeFilter) return false;
                   }
 
                   // Apply forecast tier filter
