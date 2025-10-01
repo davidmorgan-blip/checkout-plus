@@ -18,6 +18,7 @@ import {
   Link,
 } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import { API_ENDPOINTS } from '../config/api';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';

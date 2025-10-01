@@ -15,19 +15,12 @@ import {
   Chip,
   LinearProgress,
   Alert,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Button,
   Tooltip,
   IconButton,
   FormControlLabel,
   Checkbox,
   Switch,
-  TextField,
-  Autocomplete,
-  Link
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -35,7 +28,13 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import DownloadIcon from '@mui/icons-material/Download';
 import WarningIcon from '@mui/icons-material/Warning';
-import LaunchIcon from '@mui/icons-material/Launch';
+import { renderMerchantWithLinks } from '../utils/merchantHelpers';
+import { formatCurrency, formatPercentage, formatVolume, formatPricingInfo } from '../utils/formatters';
+import { getVarianceColor, getVarianceIcon } from '../utils/varianceHelpers';
+import { useMerchantExclusion } from '../hooks/useMerchantExclusion';
+import { ExcludeCheckboxColumn } from './common/ExcludeCheckboxColumn';
+import { MerchantFilterAutocomplete } from './common/MerchantFilterAutocomplete';
+import { DaysLiveFilter } from './common/DaysLiveFilter';
 
 interface NetRevenueData {
   accountId: string;
@@ -67,40 +66,6 @@ interface NetRevenueData {
 
 interface NetRevenueAnalysisProps {}
 
-// Helper function to render merchant name with SFDC links
-const renderMerchantWithLinks = (merchantName: string, accountId: string, opportunityId: string, pricingInfo?: string) => (
-  <Box>
-    <Box display="flex" alignItems="center" gap={0.5}>
-      <Typography variant="body2" fontWeight="medium">
-        {merchantName}
-      </Typography>
-      <Tooltip title="View SFDC Account">
-        <IconButton
-          size="small"
-          sx={{ padding: '2px' }}
-          onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Account/${accountId}/view`, '_blank')}
-        >
-          <LaunchIcon sx={{ fontSize: 12, color: 'primary.main' }} />
-        </IconButton>
-      </Tooltip>
-      <Tooltip title="View SFDC Opportunity">
-        <IconButton
-          size="small"
-          sx={{ padding: '2px' }}
-          onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Opportunity/${opportunityId}/view`, '_blank')}
-        >
-          <LaunchIcon sx={{ fontSize: 12, color: 'secondary.main' }} />
-        </IconButton>
-      </Tooltip>
-    </Box>
-    {pricingInfo && (
-      <Typography variant="caption" color="textSecondary">
-        {pricingInfo}
-      </Typography>
-    )}
-  </Box>
-);
-
 export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const [data, setData] = useState<NetRevenueData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,7 +77,9 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const [revenueVarianceFilter, setRevenueVarianceFilter] = useState('all');
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
   const [hideInsufficientData, setHideInsufficientData] = useState(true);
-  const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
+
+  // Use the merchant exclusion hook
+  const { excludedMerchants, handleExcludeToggle, handleSelectAll, handleClearAll, setExcluded } = useMerchantExclusion();
 
   // Filter data based on adjustment status, revenue variance, and merchant name
   const getFilteredData = () => {
@@ -152,11 +119,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   };
 
   // Get unique merchant names for autocomplete
-  const getMerchantOptions = () => {
-    if (!data) return [];
-    const merchantNames = data.map(d => d.accountName).filter(Boolean);
-    return Array.from(new Set(merchantNames)).sort();
-  };
+  const merchantOptions = data ? Array.from(new Set(data.map(d => d.accountName).filter(Boolean))).sort() : [];
 
   // Calculate revenue variance performance tier
   const getRevenueVarianceTier = (merchant: NetRevenueData): string => {
@@ -247,7 +210,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
         .filter(d => !d.hasSufficientData)
         .map(d => d.accountId);
 
-      setExcludedMerchants(prev => {
+      setExcluded(prev => {
         const newExcluded = new Set(prev);
         insufficientDataMerchants.forEach(id => newExcluded.add(id));
         return newExcluded;
@@ -258,13 +221,13 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
         .filter(d => !d.hasSufficientData)
         .map(d => d.accountId);
 
-      setExcludedMerchants(prev => {
+      setExcluded(prev => {
         const newExcluded = new Set(prev);
         insufficientDataMerchants.forEach(id => newExcluded.delete(id));
         return newExcluded;
       });
     }
-  }, [hideInsufficientData, data]);
+  }, [hideInsufficientData, data, setExcluded]);
 
   const handleExport = async () => {
     try {
@@ -315,52 +278,6 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     }
   };
 
-  const formatCurrency = (value: number) => {
-    if (Math.abs(value) >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
-    } else if (Math.abs(value) >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
-    } else {
-      return `$${value.toFixed(0)}`;
-    }
-  };
-
-  const formatPercentage = (value: number) => {
-    return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
-  };
-
-  const formatVolume = (value: number) => {
-    if (Math.abs(value) >= 1000000) {
-      return `${(value / 1000000).toFixed(1)}M`;
-    } else if (Math.abs(value) >= 1000) {
-      return `${(value / 1000).toFixed(0)}K`;
-    } else {
-      return value.toFixed(0);
-    }
-  };
-
-  const formatRevenueVariance = (variance: number, variancePercent: number) => {
-    const formattedVariance = variance >= 0
-      ? formatCurrency(variance)
-      : `(${formatCurrency(Math.abs(variance))})`;
-    const formattedPercent = formatPercentage(variancePercent);
-    return `${formattedVariance} ${formattedPercent}`;
-  };
-
-  const formatPricingInfo = (pricingModel: string, labelsPaidBy: string) => {
-    const labelsAbbreviation = labelsPaidBy === 'Loop' ? 'LPL' : labelsPaidBy === 'Merchant' ? 'MPL' : '';
-    return labelsAbbreviation ? `${pricingModel} • ${labelsAbbreviation}` : pricingModel;
-  };
-
-  const getVarianceColor = (variance: number) => {
-    if (variance >= 10) return 'success';
-    if (variance >= -10) return 'warning';
-    return 'error';
-  };
-
-  const getVarianceIcon = (variance: number) => {
-    return variance >= 0 ? <TrendingUpIcon /> : <TrendingDownIcon />;
-  };
 
   const calculateSummaryStats = () => {
     const filteredData = getFilteredAndIncludedData();
@@ -416,24 +333,10 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     };
   };
 
-  // Exclusion handlers
-  const handleExcludeToggle = (accountId: string) => {
-    const newExcluded = new Set(excludedMerchants);
-    if (newExcluded.has(accountId)) {
-      newExcluded.delete(accountId);
-    } else {
-      newExcluded.add(accountId);
-    }
-    setExcludedMerchants(newExcluded);
-  };
-
-  const handleSelectAll = () => {
-    const allAccountIds = new Set(getFilteredData().map(item => item.accountId));
-    setExcludedMerchants(allAccountIds);
-  };
-
-  const handleClearAll = () => {
-    setExcludedMerchants(new Set());
+  // Wrapper for handleSelectAll to pass merchant IDs
+  const handleSelectAllFiltered = () => {
+    const allAccountIds = getFilteredData().map(item => item.accountId);
+    handleSelectAll(allAccountIds);
   };
 
   const summaryStats = calculateSummaryStats();
@@ -468,21 +371,10 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <FormControl sx={{ minWidth: 200 }}>
-              <InputLabel>Days Live Filter</InputLabel>
-              <Select
-                value={daysLiveFilter}
-                onChange={(e) => setDaysLiveFilter(e.target.value)}
-                label="Days Live Filter"
-              >
-                <MenuItem value="all">All Merchants</MenuItem>
-                <MenuItem value="under30">&lt;30 Days Live</MenuItem>
-                <MenuItem value="30-60">30-60 Days Live</MenuItem>
-                <MenuItem value="30">30+ Days Live</MenuItem>
-                <MenuItem value="60">60+ Days Live</MenuItem>
-                <MenuItem value="90">90+ Days Live</MenuItem>
-              </Select>
-            </FormControl>
+            <DaysLiveFilter
+              value={daysLiveFilter}
+              onChange={setDaysLiveFilter}
+            />
             <FormControlLabel
               control={
                 <Switch
@@ -495,22 +387,10 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
               sx={{ ml: 0 }}
             />
           </Box>
-          <Autocomplete
-            sx={{ minWidth: 250 }}
-            options={getMerchantOptions()}
+          <MerchantFilterAutocomplete
+            merchants={merchantOptions}
             value={merchantFilter}
             onChange={(event, newValue) => setMerchantFilter(newValue)}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Filter by Merchant"
-                placeholder="Search merchants..."
-                size="medium"
-              />
-            )}
-            clearOnBlur={false}
-            clearOnEscape
-            freeSolo={false}
           />
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Button
@@ -738,30 +618,10 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell padding="checkbox">
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                      <Typography variant="caption">Exclude</Typography>
-                      <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        <Link
-                          component="button"
-                          variant="caption"
-                          onClick={handleSelectAll}
-                          sx={{ cursor: 'pointer' }}
-                        >
-                          All
-                        </Link>
-                        <Typography variant="caption">|</Typography>
-                        <Link
-                          component="button"
-                          variant="caption"
-                          onClick={handleClearAll}
-                          sx={{ cursor: 'pointer' }}
-                        >
-                          None
-                        </Link>
-                      </Box>
-                    </Box>
-                  </TableCell>
+                  <ExcludeCheckboxColumn
+                    onSelectAll={handleSelectAllFiltered}
+                    onClearAll={handleClearAll}
+                  />
                   <TableCell>Merchant</TableCell>
                   <TableCell align="center">Days Live</TableCell>
                   <TableCell align="right">Expected Annual Revenue</TableCell>

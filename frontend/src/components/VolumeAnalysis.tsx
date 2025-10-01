@@ -18,25 +18,25 @@ import {
   TableHead,
   TableRow,
   Chip,
-  IconButton,
-  Tooltip,
-  TextField,
-  Autocomplete,
   Checkbox,
-  Link,
   Collapse,
-  Button
+  Button,
+  IconButton
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import BusinessIcon from '@mui/icons-material/Business';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import TimelineIcon from '@mui/icons-material/Timeline';
-import LaunchIcon from '@mui/icons-material/Launch';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ShowChartIcon from '@mui/icons-material/ShowChart';
 import { API_ENDPOINTS } from '../config/api';
+import { renderMerchantWithLinks } from '../utils/merchantHelpers';
+import { formatVolume } from '../utils/formatters';
+import { useMerchantExclusion } from '../hooks/useMerchantExclusion';
+import { ExcludeCheckboxColumn } from './common/ExcludeCheckboxColumn';
+import { MerchantFilterAutocomplete } from './common/MerchantFilterAutocomplete';
+import { DaysLiveFilter } from './common/DaysLiveFilter';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -119,40 +119,6 @@ interface VolumeData {
   seasonalityData: any[];
 }
 
-// Helper function to render merchant name with SFDC links
-const renderMerchantWithLinks = (merchantName: string, accountId: string, opportunityId: string, verticalAndPayment?: string) => (
-  <Box>
-    <Box display="flex" alignItems="center" gap={0.5}>
-      <Typography variant="body2" fontWeight="medium">
-        {merchantName}
-      </Typography>
-      <Tooltip title="View SFDC Account">
-        <IconButton
-          size="small"
-          sx={{ padding: '2px' }}
-          onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Account/${accountId}/view`, '_blank')}
-        >
-          <LaunchIcon sx={{ fontSize: 12, color: 'primary.main' }} />
-        </IconButton>
-      </Tooltip>
-      <Tooltip title="View SFDC Opportunity">
-        <IconButton
-          size="small"
-          sx={{ padding: '2px' }}
-          onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Opportunity/${opportunityId}/view`, '_blank')}
-        >
-          <LaunchIcon sx={{ fontSize: 12, color: 'secondary.main' }} />
-        </IconButton>
-      </Tooltip>
-    </Box>
-    {verticalAndPayment && (
-      <Typography variant="caption" color="textSecondary">
-        {verticalAndPayment}
-      </Typography>
-    )}
-  </Box>
-);
-
 export default function VolumeAnalysis() {
   const [volumeData, setVolumeData] = useState<VolumeData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,8 +128,10 @@ export default function VolumeAnalysis() {
   const [forecastTierFilter, setForecastTierFilter] = useState('all');
   const [merchantSegmentFilter, setMerchantSegmentFilter] = useState('all');
   const [recordTypeFilter, setRecordTypeFilter] = useState('all');
-  const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
   const [forecastChartExpanded, setForecastChartExpanded] = useState(true);
+
+  // Use the merchant exclusion hook
+  const { excludedMerchants, handleExcludeToggle, handleSelectAll, handleClearAll } = useMerchantExclusion();
 
   const fetchVolumeData = async () => {
     try {
@@ -198,14 +166,12 @@ export default function VolumeAnalysis() {
   }, [daysLiveFilter]);
 
   // Get unique merchant names for autocomplete
-  const getMerchantOptions = () => {
-    if (!volumeData) return [];
-    // Get merchants from both forecasts and weekly trends data
-    const forecastMerchants = volumeData.forecasts.map(f => f.merchant_name).filter(Boolean);
-    const trendsMerchants = volumeData.weeklyTrends.map(t => t.merchant_name).filter(Boolean);
-    const allMerchants = [...forecastMerchants, ...trendsMerchants];
-    return Array.from(new Set(allMerchants)).sort();
-  };
+  const merchantOptions = volumeData
+    ? Array.from(new Set([
+        ...volumeData.forecasts.map(f => f.merchant_name).filter(Boolean),
+        ...volumeData.weeklyTrends.map(t => t.merchant_name).filter(Boolean)
+      ])).sort()
+    : [];
 
   // Calculate forecast performance tier based on forecast vs expected volume
   const getForecastPerformanceTier = (forecast: ForecastData): string => {
@@ -571,24 +537,10 @@ export default function VolumeAnalysis() {
     );
   }
 
-  // Exclusion handlers
-  const handleExcludeToggle = (merchantId: string) => {
-    const newExcluded = new Set(excludedMerchants);
-    if (newExcluded.has(merchantId)) {
-      newExcluded.delete(merchantId);
-    } else {
-      newExcluded.add(merchantId);
-    }
-    setExcludedMerchants(newExcluded);
-  };
-
-  const handleSelectAll = () => {
-    const allMerchantIds = new Set(getMerchantWeeklyData().map(m => m.salesforce_account_id));
-    setExcludedMerchants(allMerchantIds);
-  };
-
-  const handleClearAll = () => {
-    setExcludedMerchants(new Set());
+  // Wrapper for handleSelectAll to pass merchant IDs
+  const handleSelectAllFiltered = () => {
+    const allMerchantIds = getMerchantWeeklyData().map(m => m.salesforce_account_id);
+    handleSelectAll(allMerchantIds);
   };
 
   // Filter function for merchant data
@@ -716,21 +668,11 @@ export default function VolumeAnalysis() {
 
       {/* Filter Controls */}
       <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-        <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Days Live Filter</InputLabel>
-          <Select
-            value={daysLiveFilter}
-            label="Days Live Filter"
-            onChange={(e) => setDaysLiveFilter(e.target.value)}
-          >
-            <MenuItem value="all">All Merchants</MenuItem>
-            <MenuItem value="under30">&lt;30 Days Live</MenuItem>
-            <MenuItem value="30-60">30-60 Days Live</MenuItem>
-            <MenuItem value="30">&gt; 30 Days Live</MenuItem>
-            <MenuItem value="60">&gt; 60 Days Live</MenuItem>
-            <MenuItem value="90">&gt; 90 Days Live</MenuItem>
-          </Select>
-        </FormControl>
+        <DaysLiveFilter
+          value={daysLiveFilter}
+          onChange={setDaysLiveFilter}
+          size="small"
+        />
 
         <FormControl size="small" sx={{ minWidth: 180 }}>
           <InputLabel>Merchant Segment</InputLabel>
@@ -775,22 +717,11 @@ export default function VolumeAnalysis() {
           </Select>
         </FormControl>
 
-        <Autocomplete
-          size="small"
-          sx={{ minWidth: 250 }}
-          options={getMerchantOptions()}
+        <MerchantFilterAutocomplete
+          merchants={merchantOptions}
           value={merchantFilter}
           onChange={(event, newValue) => setMerchantFilter(newValue)}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="Filter by Merchant"
-              placeholder="Search merchants..."
-            />
-          )}
-          clearOnBlur={false}
-          clearOnEscape
-          freeSolo={false}
+          size="small"
         />
       </Box>
 
@@ -928,30 +859,10 @@ export default function VolumeAnalysis() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell padding="checkbox" sx={{ width: '60px' }}>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                    <Typography variant="caption">Exclude</Typography>
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <Link
-                        component="button"
-                        variant="caption"
-                        onClick={handleSelectAll}
-                        sx={{ cursor: 'pointer' }}
-                      >
-                        All
-                      </Link>
-                      <Typography variant="caption">|</Typography>
-                      <Link
-                        component="button"
-                        variant="caption"
-                        onClick={handleClearAll}
-                        sx={{ cursor: 'pointer' }}
-                      >
-                        None
-                      </Link>
-                    </Box>
-                  </Box>
-                </TableCell>
+                <ExcludeCheckboxColumn
+                  onSelectAll={handleSelectAllFiltered}
+                  onClearAll={handleClearAll}
+                />
                 <TableCell>Merchant</TableCell>
                 <TableCell align="right">Days Live</TableCell>
                 {recentWeeks.map(week => (

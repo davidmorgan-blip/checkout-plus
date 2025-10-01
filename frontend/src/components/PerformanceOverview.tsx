@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { API_ENDPOINTS } from '../config/api';
 import {
   Box,
@@ -7,10 +7,6 @@ import {
   Typography,
   Card,
   CardContent,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   CircularProgress,
   Alert,
   Chip,
@@ -20,12 +16,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  IconButton,
-  Tooltip,
-  TextField,
-  Autocomplete,
   Checkbox,
-  Link,
   Switch,
   FormControlLabel,
 } from '@mui/material';
@@ -35,7 +26,11 @@ import BusinessIcon from '@mui/icons-material/Business';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import LaunchIcon from '@mui/icons-material/Launch';
+import { renderMerchantWithLinks } from '../utils/merchantHelpers';
+import { useMerchantExclusion } from '../hooks/useMerchantExclusion';
+import { ExcludeCheckboxColumn } from './common/ExcludeCheckboxColumn';
+import { MerchantFilterAutocomplete } from './common/MerchantFilterAutocomplete';
+import { DaysLiveFilter } from './common/DaysLiveFilter';
 
 interface PerformanceMetrics {
   totalMerchants: number;
@@ -94,40 +89,6 @@ interface MerchantData {
   labels_paid_by: string;
 }
 
-// Helper function to render merchant name with SFDC links
-const renderMerchantWithLinks = (merchantName: string, accountId: string, opportunityId: string, verticalAndPayment?: string) => (
-  <Box>
-    <Box display="flex" alignItems="center" gap={0.5}>
-      <Typography variant="body2" fontWeight="medium">
-        {merchantName}
-      </Typography>
-      <Tooltip title="View SFDC Account">
-        <IconButton
-          size="small"
-          sx={{ padding: '2px' }}
-          onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Account/${accountId}/view`, '_blank')}
-        >
-          <LaunchIcon sx={{ fontSize: 12, color: 'primary.main' }} />
-        </IconButton>
-      </Tooltip>
-      <Tooltip title="View SFDC Opportunity">
-        <IconButton
-          size="small"
-          sx={{ padding: '2px' }}
-          onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Opportunity/${opportunityId}/view`, '_blank')}
-        >
-          <LaunchIcon sx={{ fontSize: 12, color: 'secondary.main' }} />
-        </IconButton>
-      </Tooltip>
-    </Box>
-    {verticalAndPayment && (
-      <Typography variant="caption" color="textSecondary">
-        {verticalAndPayment}
-      </Typography>
-    )}
-  </Box>
-);
-
 export default function PerformanceOverview() {
   const [overviewData, setOverviewData] = useState<OverviewData | null>(null);
   const [merchantData, setMerchantData] = useState<MerchantData[]>([]);
@@ -136,9 +97,11 @@ export default function PerformanceOverview() {
   const [performanceTierFilter, setPerformanceTierFilter] = useState('all');
   const [error, setError] = useState<string | null>(null);
   const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
-  const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
   const [allMerchantData, setAllMerchantData] = useState<MerchantData[]>([]);
   const [hideLowAdoptionRate, setHideLowAdoptionRate] = useState(false);
+
+  // Use the merchant exclusion hook
+  const { excludedMerchants, handleExcludeToggle, handleSelectAll, handleClearAll, setExcluded } = useMerchantExclusion();
 
   const fetchOverviewData = async () => {
     try {
@@ -229,52 +192,32 @@ export default function PerformanceOverview() {
         .filter(m => m.current_adoption_rate < 0.02)
         .map(m => m.salesforce_account_id);
 
-      setExcludedMerchants(prev => {
+      setExcluded(prev => {
         const newExcluded = new Set(prev);
         lowAdoptionMerchants.forEach(id => newExcluded.add(id));
         return newExcluded;
       });
     } else {
-      // Remove low adoption merchants from excluded set (but keep manually excluded ones)
-      // We need to track which ones were manually excluded vs automatically excluded
+      // Remove low adoption merchants from excluded set
       const lowAdoptionMerchants = allMerchantData
         .filter(m => m.current_adoption_rate < 0.02)
         .map(m => m.salesforce_account_id);
 
-      setExcludedMerchants(prev => {
+      setExcluded(prev => {
         const newExcluded = new Set(prev);
         lowAdoptionMerchants.forEach(id => newExcluded.delete(id));
         return newExcluded;
       });
     }
-  }, [hideLowAdoptionRate, allMerchantData]);
+  }, [hideLowAdoptionRate, allMerchantData, setExcluded]);
 
   // Get unique merchant names for autocomplete
-  const getMerchantOptions = () => {
-    if (!merchantData) return [];
-    const merchantNames = merchantData.map(m => m.merchant_name).filter(Boolean);
-    return Array.from(new Set(merchantNames)).sort();
-  };
+  const merchantOptions = merchantData ? Array.from(new Set(merchantData.map(m => m.merchant_name).filter(Boolean))).sort() : [];
 
-  // Since filtering is now done server-side, just return the merchant data
-  // Exclusion handlers
-  const handleExcludeToggle = (merchantId: string) => {
-    const newExcluded = new Set(excludedMerchants);
-    if (newExcluded.has(merchantId)) {
-      newExcluded.delete(merchantId);
-    } else {
-      newExcluded.add(merchantId);
-    }
-    setExcludedMerchants(newExcluded);
-  };
-
-  const handleSelectAll = () => {
-    const allMerchantIds = new Set(getFilteredMerchantData().map(m => m.salesforce_account_id));
-    setExcludedMerchants(allMerchantIds);
-  };
-
-  const handleClearAll = () => {
-    setExcludedMerchants(new Set());
+  // Wrapper for handleSelectAll to pass merchant IDs
+  const handleSelectAllFiltered = () => {
+    const allMerchantIds = getFilteredMerchantData().map(m => m.salesforce_account_id);
+    handleSelectAll(allMerchantIds);
   };
 
   const getFilteredMerchantData = () => {
@@ -396,6 +339,50 @@ export default function PerformanceOverview() {
     };
   };
 
+  const filteredPerformanceTiers = useMemo(() => {
+    // Get all merchant data excluding explicitly excluded merchants
+    const filteredData = allMerchantData.filter(m => !excludedMerchants.has(m.salesforce_account_id));
+
+    const counts = {
+      exceeding: 0,
+      meeting: 0,
+      slightlyBelow: 0,
+      significantlyBelow: 0,
+      noTier: 0
+    };
+
+    console.log('Computing filtered performance tiers:', {
+      totalMerchants: allMerchantData.length,
+      excludedCount: excludedMerchants.size,
+      filteredCount: filteredData.length,
+      sampleTiers: filteredData.slice(0, 5).map(m => ({ name: m.merchant_name, tier: m.performance_tier }))
+    });
+
+    filteredData.forEach(merchant => {
+      switch (merchant.performance_tier) {
+        case 'exceeding':
+          counts.exceeding++;
+          break;
+        case 'meeting':
+          counts.meeting++;
+          break;
+        case 'slightly_below':
+          counts.slightlyBelow++;
+          break;
+        case 'significantly_below':
+          counts.significantlyBelow++;
+          break;
+        default:
+          counts.noTier++;
+          break;
+      }
+    });
+
+    console.log('Performance tier counts:', counts);
+
+    return counts;
+  }, [allMerchantData, excludedMerchants]);
+
   const getPerformanceTierColor = (tier: string) => {
     switch (tier) {
       case 'exceeding': return 'success';
@@ -457,7 +444,8 @@ export default function PerformanceOverview() {
   const filteredMetrics = getFilteredSummaryMetrics();
 
   // For chips, use server data. For summary tiles, use filtered metrics
-  const totalMerchantsFromServer = overviewData.metrics.totalMerchants;
+  // Use allMerchantData.length to be consistent with performance tier chips
+  const totalMerchantsFromServer = allMerchantData.length;
   const excludedCount = excludedMerchants.size;
 
   return (
@@ -468,37 +456,16 @@ export default function PerformanceOverview() {
 
       {/* Filter Controls */}
       <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
-        <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Days Live Filter</InputLabel>
-          <Select
-            value={daysLiveFilter}
-            label="Days Live Filter"
-            onChange={(e) => handleDaysLiveFilterChange(e.target.value)}
-          >
-            <MenuItem value="all">All Merchants</MenuItem>
-            <MenuItem value="under30">&lt;30 Days Live</MenuItem>
-            <MenuItem value="30-60">30-60 Days Live</MenuItem>
-            <MenuItem value="30">&gt; 30 Days Live</MenuItem>
-            <MenuItem value="60">&gt; 60 Days Live</MenuItem>
-            <MenuItem value="90">&gt; 90 Days Live</MenuItem>
-          </Select>
-        </FormControl>
-        <Autocomplete
+        <DaysLiveFilter
+          value={daysLiveFilter}
+          onChange={handleDaysLiveFilterChange}
           size="small"
-          sx={{ minWidth: 250 }}
-          options={getMerchantOptions()}
+        />
+        <MerchantFilterAutocomplete
+          merchants={merchantOptions}
           value={merchantFilter}
           onChange={(event, newValue) => handleMerchantFilterChange(newValue)}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="Filter by Merchant"
-              placeholder="Search merchants..."
-            />
-          )}
-          clearOnBlur={false}
-          clearOnEscape
-          freeSolo={false}
+          size="small"
         />
         <FormControlLabel
           control={
@@ -589,41 +556,44 @@ export default function PerformanceOverview() {
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <Chip
-            label={`All: ${totalMerchantsFromServer}`}
+            label={`All: ${filteredPerformanceTiers.exceeding + filteredPerformanceTiers.meeting + filteredPerformanceTiers.slightlyBelow + filteredPerformanceTiers.significantlyBelow + filteredPerformanceTiers.noTier}`}
             color="primary"
             variant={performanceTierFilter === 'all' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('all')}
             clickable
           />
           <Chip
-            label={`Exceeding: ${overviewData.performanceTiers.exceeding}`}
+            label={`Exceeding: ${filteredPerformanceTiers.exceeding}`}
             color="success"
             variant={performanceTierFilter === 'exceeding' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('exceeding')}
             clickable
           />
           <Chip
-            label={`Meeting: ${overviewData.performanceTiers.meeting}`}
+            label={`Meeting: ${filteredPerformanceTiers.meeting}`}
             color="info"
             variant={performanceTierFilter === 'meeting' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('meeting')}
             clickable
           />
           <Chip
-            label={`Slightly Below: ${overviewData.performanceTiers.slightlyBelow}`}
+            label={`Slightly Below: ${filteredPerformanceTiers.slightlyBelow}`}
             color="warning"
             variant={performanceTierFilter === 'slightly_below' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('slightly_below')}
             clickable
           />
           <Chip
-            label={`Significantly Below: ${overviewData.performanceTiers.significantlyBelow}`}
+            label={`Significantly Below: ${filteredPerformanceTiers.significantlyBelow}`}
             color="error"
             variant={performanceTierFilter === 'significantly_below' ? 'filled' : 'outlined'}
             onClick={() => handlePerformanceTierFilterChange('significantly_below')}
             clickable
           />
         </Box>
+        <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 2 }}>
+          <strong>Performance Tiers:</strong> Exceeding (&gt;5pp above expected adoption rate) • Meeting (within ±5pp of expected) • Slightly Below (5-10pp below expected) • Significantly Below (&gt;10pp below expected)
+        </Typography>
       </Paper>
 
       {/* Top Merchants Table */}
@@ -644,30 +614,10 @@ export default function PerformanceOverview() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell padding="checkbox" sx={{ width: '60px' }}>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                    <Typography variant="caption">Exclude</Typography>
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <Link
-                        component="button"
-                        variant="caption"
-                        onClick={handleSelectAll}
-                        sx={{ cursor: 'pointer' }}
-                      >
-                        All
-                      </Link>
-                      <Typography variant="caption">|</Typography>
-                      <Link
-                        component="button"
-                        variant="caption"
-                        onClick={handleClearAll}
-                        sx={{ cursor: 'pointer' }}
-                      >
-                        None
-                      </Link>
-                    </Box>
-                  </Box>
-                </TableCell>
+                <ExcludeCheckboxColumn
+                  onSelectAll={handleSelectAllFiltered}
+                  onClearAll={handleClearAll}
+                />
                 <TableCell>Merchant</TableCell>
                 <TableCell align="right">Days Live</TableCell>
                 <TableCell align="right">Trailing 4-Week Orders</TableCell>

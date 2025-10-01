@@ -21,14 +21,14 @@ import {
   MenuItem,
   Tooltip,
   IconButton,
-  TextField,
-  Autocomplete,
   Checkbox,
-  Link,
   FormControlLabel,
   Switch,
   Button,
-  Collapse
+  Collapse,
+  TextField,
+  Autocomplete,
+  Link
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -36,10 +36,15 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import WarningIcon from '@mui/icons-material/Warning';
 import DownloadIcon from '@mui/icons-material/Download';
-import LaunchIcon from '@mui/icons-material/Launch';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import * as XLSX from 'xlsx';
+import { renderMerchantWithLinks } from '../utils/merchantHelpers';
+import { formatCurrency, formatPercentage } from '../utils/formatters';
+import { getVarianceColor, getVarianceIcon, VARIANCE_THRESHOLDS } from '../utils/varianceHelpers';
+import { useMerchantExclusion } from '../hooks/useMerchantExclusion';
+import { ExcludeCheckboxColumn } from './common/ExcludeCheckboxColumn';
+import { DaysLiveFilter } from './common/DaysLiveFilter';
 
 interface AcvImpactData {
   accountId: string;
@@ -93,7 +98,6 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   const [labelsPaidByFilter, setLabelsPaidByFilter] = useState('all');
   const [merchantSegmentFilter, setMerchantSegmentFilter] = useState('all');
   const [recordTypeFilter, setRecordTypeFilter] = useState('all');
-  const [excludedMerchants, setExcludedMerchants] = useState<Set<string>>(new Set());
   const [hideInsufficientData, setHideInsufficientData] = useState(false);
 
   // Collapsible summary table states
@@ -102,38 +106,8 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   const [recordTypeSummaryExpanded, setRecordTypeSummaryExpanded] = useState(true);
   const [performanceTierSummaryExpanded, setPerformanceTierSummaryExpanded] = useState(true);
 
-  const renderMerchantWithLinks = (merchantName: string, accountId: string, opportunityId: string, pricingInfo?: string) => (
-    <Box>
-      <Box display="flex" alignItems="center" gap={0.5}>
-        <Typography variant="body2" fontWeight="medium">
-          {merchantName}
-        </Typography>
-        <Tooltip title="View SFDC Account">
-          <IconButton
-            size="small"
-            sx={{ padding: '2px' }}
-            onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Account/${accountId}/view`, '_blank')}
-          >
-            <LaunchIcon sx={{ fontSize: 12, color: 'primary.main' }} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="View SFDC Opportunity">
-          <IconButton
-            size="small"
-            sx={{ padding: '2px' }}
-            onClick={() => window.open(`https://loopreturn.lightning.force.com/lightning/r/Opportunity/${opportunityId}/view`, '_blank')}
-          >
-            <LaunchIcon sx={{ fontSize: 12, color: 'secondary.main' }} />
-          </IconButton>
-        </Tooltip>
-      </Box>
-      {pricingInfo && (
-        <Typography variant="caption" color="textSecondary">
-          {pricingInfo}
-        </Typography>
-      )}
-    </Box>
-  );
+  // Use the merchant exclusion hook
+  const { excludedMerchants, handleExcludeToggle, handleSelectAll, handleClearAll, setExcluded } = useMerchantExclusion();
 
   const fetchAcvData = async () => {
     try {
@@ -177,7 +151,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         .filter(d => !d.hasSufficientData)
         .map(d => d.accountId);
 
-      setExcludedMerchants(prev => {
+      setExcluded(prev => {
         const newExcluded = new Set(prev);
         insufficientDataMerchants.forEach(id => newExcluded.add(id));
         return newExcluded;
@@ -188,57 +162,14 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         .filter(d => !d.hasSufficientData)
         .map(d => d.accountId);
 
-      setExcludedMerchants(prev => {
+      setExcluded(prev => {
         const newExcluded = new Set(prev);
         insufficientDataMerchants.forEach(id => newExcluded.delete(id));
         return newExcluded;
       });
     }
-  }, [hideInsufficientData, acvData]);
+  }, [hideInsufficientData, acvData, setExcluded]);
 
-  const formatCurrency = (value: number): string => {
-    const absValue = Math.abs(value);
-    const formatted = new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(absValue);
-
-    return value < 0 ? `(${formatted})` : formatted;
-  };
-
-  const formatCurrencyCompact = (value: number): string => {
-    const absValue = Math.abs(value);
-    let formatted: string;
-
-    if (absValue >= 1000000) {
-      formatted = `$${(absValue / 1000000).toFixed(1)}M`;
-    } else if (absValue >= 1000) {
-      formatted = `$${(absValue / 1000).toFixed(1)}K`;
-    } else {
-      formatted = `$${absValue.toFixed(0)}`;
-    }
-
-    return value < 0 ? `(${formatted})` : formatted;
-  };
-
-  const formatPercent = (value: number): string => {
-    return `${value.toFixed(1)}%`;
-  };
-
-  const getVarianceColor = (variancePercent: number): 'success' | 'warning' | 'error' | 'default' => {
-    if (variancePercent > 110) return 'success';
-    if (variancePercent >= 90) return 'default';
-    if (variancePercent >= 70) return 'warning';
-    return 'error';
-  };
-
-  const getVarianceIcon = (variancePercent: number) => {
-    if (variancePercent > 100) return <TrendingUpIcon fontSize="small" />;
-    if (variancePercent < 100) return <TrendingDownIcon fontSize="small" />;
-    return null;
-  };
 
   // Export functions
   const exportMerchantDataToCsv = () => {
@@ -546,23 +477,10 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
     return 'significantlyBelow30';
   };
 
-  const handleExcludeToggle = (accountId: string) => {
-    const newExcluded = new Set(excludedMerchants);
-    if (newExcluded.has(accountId)) {
-      newExcluded.delete(accountId);
-    } else {
-      newExcluded.add(accountId);
-    }
-    setExcludedMerchants(newExcluded);
-  };
-
-  const handleSelectAll = () => {
-    const allAccountIds = new Set(filteredData.map(item => item.accountId));
-    setExcludedMerchants(allAccountIds);
-  };
-
-  const handleClearAll = () => {
-    setExcludedMerchants(new Set());
+  // Wrapper for handleSelectAll to pass merchant IDs
+  const handleSelectAllFiltered = () => {
+    const allAccountIds = filteredData.map(item => item.accountId);
+    handleSelectAll(allAccountIds);
   };
 
   // Calculate adjusted summary based on all active filters
@@ -1304,7 +1222,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
               Original Net ACV
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {formatCurrencyCompact(displaySummary.totalMerchants > 0 ? displaySummary.totalOriginalEndingAcv / displaySummary.totalMerchants : 0)} per merchant
+              {formatCurrency(displaySummary.totalMerchants > 0 ? displaySummary.totalOriginalEndingAcv / displaySummary.totalMerchants : 0, true)} per merchant
             </Typography>
           </CardContent>
         </Card>
@@ -1323,7 +1241,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                 'N/A'} of original)
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-              {formatCurrencyCompact(displaySummary.totalMerchants > 0 ? displaySummary.totalProjectedEndingAcv / displaySummary.totalMerchants : 0)} per merchant
+              {formatCurrency(displaySummary.totalMerchants > 0 ? displaySummary.totalProjectedEndingAcv / displaySummary.totalMerchants : 0, true)} per merchant
             </Typography>
           </CardContent>
         </Card>
@@ -1506,21 +1424,10 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
 
       {/* Filters */}
       <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-        <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel>Days Live</InputLabel>
-          <Select
-            value={daysLiveFilter}
-            label="Days Live"
-            onChange={(e) => onDaysLiveFilterChange(e.target.value)}
-          >
-            <MenuItem value="all">All Merchants</MenuItem>
-            <MenuItem value="under30">&lt;30 Days Live</MenuItem>
-            <MenuItem value="30-60">30-60 Days Live</MenuItem>
-            <MenuItem value="30">30+ Days Live</MenuItem>
-            <MenuItem value="60">60+ Days Live</MenuItem>
-            <MenuItem value="90">90+ Days Live</MenuItem>
-          </Select>
-        </FormControl>
+        <DaysLiveFilter
+          value={daysLiveFilter}
+          onChange={onDaysLiveFilterChange}
+        />
 
         <Autocomplete
           sx={{ minWidth: 300 }}
@@ -2541,30 +2448,10 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
             <Table stickyHeader size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell padding="checkbox">
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                      <Typography variant="caption">Exclude</Typography>
-                      <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        <Link
-                          component="button"
-                          variant="caption"
-                          onClick={handleSelectAll}
-                          sx={{ cursor: 'pointer' }}
-                        >
-                          All
-                        </Link>
-                        <Typography variant="caption">|</Typography>
-                        <Link
-                          component="button"
-                          variant="caption"
-                          onClick={handleClearAll}
-                          sx={{ cursor: 'pointer' }}
-                        >
-                          None
-                        </Link>
-                      </Box>
-                    </Box>
-                  </TableCell>
+                  <ExcludeCheckboxColumn
+                    onSelectAll={handleSelectAllFiltered}
+                    onClearAll={handleClearAll}
+                  />
                   <TableCell>Merchant</TableCell>
                   <TableCell align="right">Days Live</TableCell>
                   <TableCell align="right">Original Ending ACV</TableCell>
@@ -2719,8 +2606,8 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
                         <Chip
-                          label={formatPercent(row.acvVariancePercent)}
-                          color={getVarianceColor(row.acvVariancePercent)}
+                          label={formatPercentage(row.acvVariancePercent, false)}
+                          color={getVarianceColor(row.acvVariancePercent, VARIANCE_THRESHOLDS.ACV)}
                           size="small"
                         />
                         {row.pricingModel !== 'Flat' && row.daysLive > 28 && !row.hasSufficientData ? (
