@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_ENDPOINTS } from '../config/api';
 import {
   Box,
   Typography,
@@ -141,10 +142,6 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
       filtered = filtered.filter(d => d.accountName === merchantFilter);
     }
 
-    // Apply hide insufficient data filter
-    if (hideInsufficientData) {
-      filtered = filtered.filter(d => d.hasSufficientData);
-    }
 
     return filtered;
   };
@@ -182,10 +179,6 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
       filtered = filtered.filter(d => d.accountName === merchantFilter);
     }
 
-    // Apply hide insufficient data filter
-    if (hideInsufficientData) {
-      filtered = filtered.filter(d => d.hasSufficientData);
-    }
 
     // Exclude merchants that are excluded
     filtered = filtered.filter(d => !excludedMerchants.has(d.accountId));
@@ -209,10 +202,6 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
       filtered = filtered.filter(d => d.accountName === merchantFilter);
     }
 
-    // Apply hide insufficient data filter
-    if (hideInsufficientData) {
-      filtered = filtered.filter(d => d.hasSufficientData);
-    }
 
     // Exclude merchants that are excluded
     filtered = filtered.filter(d => !excludedMerchants.has(d.accountId));
@@ -229,7 +218,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
   const fetchNetRevenueData = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3001/api/net-revenue/net-revenue?daysLive=${daysLiveFilter}`);
+      const response = await fetch(`${API_ENDPOINTS.NET_REVENUE}?daysLive=${daysLiveFilter}`);
       const result = await response.json();
 
       if (result.success) {
@@ -250,6 +239,33 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
     fetchNetRevenueData();
   }, [daysLiveFilter]);
 
+  // Automatically exclude/include merchants based on the insufficient data toggle
+  useEffect(() => {
+    if (hideInsufficientData) {
+      // Add merchants with insufficient data to the excluded set
+      const insufficientDataMerchants = data
+        .filter(d => !d.hasSufficientData)
+        .map(d => d.accountId);
+
+      setExcludedMerchants(prev => {
+        const newExcluded = new Set(prev);
+        insufficientDataMerchants.forEach(id => newExcluded.add(id));
+        return newExcluded;
+      });
+    } else {
+      // Remove insufficient data merchants from excluded set
+      const insufficientDataMerchants = data
+        .filter(d => !d.hasSufficientData)
+        .map(d => d.accountId);
+
+      setExcludedMerchants(prev => {
+        const newExcluded = new Set(prev);
+        insufficientDataMerchants.forEach(id => newExcluded.delete(id));
+        return newExcluded;
+      });
+    }
+  }, [hideInsufficientData, data]);
+
   const handleExport = async () => {
     try {
       setExporting(true);
@@ -265,7 +281,7 @@ export default function NetRevenueAnalysis({}: NetRevenueAnalysisProps) {
         params.append('excludedMerchants', merchantId);
       });
 
-      const response = await fetch(`http://localhost:3001/api/net-revenue/net-revenue/export?${params.toString()}`);
+      const response = await fetch(`${API_ENDPOINTS.NET_REVENUE_EXPORT}?${params.toString()}`);
 
       if (!response.ok) {
         throw new Error('Export failed');

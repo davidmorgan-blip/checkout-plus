@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_ENDPOINTS } from '../config/api';
 import {
   Box,
   Typography,
@@ -136,7 +137,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
         params.append('search', search);
       }
 
-      const response = await fetch(`http://localhost:3001/api/net-revenue/acv-impacts?${params}`);
+      const response = await fetch(`${API_ENDPOINTS.ACV_IMPACTS}?${params}`);
       const data = await response.json();
 
       if (data.success) {
@@ -156,6 +157,33 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   useEffect(() => {
     fetchAcvData();
   }, [daysLiveFilter, search]);
+
+  // Automatically exclude/include merchants based on the insufficient data toggle
+  useEffect(() => {
+    if (hideInsufficientData) {
+      // Add merchants with insufficient data to the excluded set
+      const insufficientDataMerchants = acvData
+        .filter(d => !d.hasSufficientData)
+        .map(d => d.accountId);
+
+      setExcludedMerchants(prev => {
+        const newExcluded = new Set(prev);
+        insufficientDataMerchants.forEach(id => newExcluded.add(id));
+        return newExcluded;
+      });
+    } else {
+      // Remove insufficient data merchants from excluded set
+      const insufficientDataMerchants = acvData
+        .filter(d => !d.hasSufficientData)
+        .map(d => d.accountId);
+
+      setExcludedMerchants(prev => {
+        const newExcluded = new Set(prev);
+        insufficientDataMerchants.forEach(id => newExcluded.delete(id));
+        return newExcluded;
+      });
+    }
+  }, [hideInsufficientData, acvData]);
 
   const formatCurrency = (value: number): string => {
     const absValue = Math.abs(value);
@@ -535,10 +563,6 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       // Check if excluded
       if (excludedMerchants.has(item.accountId)) return false;
 
-      // Apply hideInsufficientData filter
-      if (hideInsufficientData && !item.hasSufficientData) {
-        return false;
-      }
 
       // Apply days live filter
       if (daysLiveFilter !== 'all') {
@@ -619,10 +643,6 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       return false;
     }
 
-    // Hide insufficient data filter
-    if (hideInsufficientData && !item.hasSufficientData) {
-      return false;
-    }
 
     // Days live filter
     if (daysLiveFilter !== 'all') {
@@ -640,7 +660,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   // Get unique pricing models and counts
   const pricingModelCounts = React.useMemo(() => {
     const counts: { [key: string]: number } = {};
-    let dataToCount = hideInsufficientData ? acvData.filter(item => item.hasSufficientData) : acvData;
+    let dataToCount = acvData;
     // Apply days live filter
     if (daysLiveFilter !== 'all') {
       const daysLiveThreshold = parseInt(daysLiveFilter);
@@ -658,7 +678,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   // Get unique labels paid by and counts
   const labelsPaidByCounts = React.useMemo(() => {
     const counts: { [key: string]: number } = {};
-    let dataToCount = hideInsufficientData ? acvData.filter(item => item.hasSufficientData) : acvData;
+    let dataToCount = acvData;
     // Apply days live filter
     if (daysLiveFilter !== 'all') {
       const daysLiveThreshold = parseInt(daysLiveFilter);
@@ -676,7 +696,7 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
   // Get unique merchant segments and counts
   const merchantSegmentCounts = React.useMemo(() => {
     const counts: { [key: string]: number } = {};
-    let dataToCount = hideInsufficientData ? acvData.filter(item => item.hasSufficientData) : acvData;
+    let dataToCount = acvData;
     // Apply days live filter
     if (daysLiveFilter !== 'all') {
       const daysLiveThreshold = parseInt(daysLiveFilter);
@@ -710,10 +730,6 @@ const AcvImpactsAnalysis: React.FC<AcvImpactsAnalysisProps> = ({
       }
       // Merchant segment filter
       if (merchantSegmentFilter !== 'all' && (item.merchantSegment || 'Unknown') !== merchantSegmentFilter) {
-        return false;
-      }
-      // Hide insufficient data filter
-      if (hideInsufficientData && !item.hasSufficientData) {
         return false;
       }
       // Days live filter
