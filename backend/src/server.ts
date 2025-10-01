@@ -7,7 +7,7 @@ import analyticsRoutes from './routes/analytics';
 import netRevenueRoutes from './routes/net-revenue';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 // Middleware
 app.use(cors());
@@ -82,10 +82,11 @@ async function startServer() {
     await database.initialize();
     console.log('Database initialized successfully');
 
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
-      console.log(`API info: http://localhost:${PORT}/api`);
+    const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+    app.listen(PORT, HOST, () => {
+      console.log(`Server running on ${HOST}:${PORT}`);
+      console.log(`Health check: http://${HOST}:${PORT}/health`);
+      console.log(`API info: http://${HOST}:${PORT}/api`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
