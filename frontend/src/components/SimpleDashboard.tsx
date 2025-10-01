@@ -34,7 +34,6 @@ import PerformanceOverview from './PerformanceOverview';
 import VolumeAnalysis from './VolumeAnalysis';
 import NetRevenueAnalysis from './NetRevenueAnalysis';
 import AcvImpactsAnalysis from './AcvImpactsAnalysis';
-import { API_ENDPOINTS } from '../config/api';
 
 interface TabPanelProps {
   children?: React.ReactNode;
