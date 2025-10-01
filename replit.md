@@ -42,7 +42,7 @@ checkout-plus/
    - Uses CRACO to configure webpack dev server
    - Set `allowedHosts: 'all'` to work with Replit's iframe proxy
    - Configured to run on 0.0.0.0:5000
-   - Created API config to dynamically determine backend URL
+   - Added proxy to package.json to forward API requests to backend in development
 
 4. **Configured backend**:
    - Development: Runs on localhost:3001
@@ -59,7 +59,12 @@ checkout-plus/
    - Type: VM (maintains state for SQLite database)
    - Build: Compiles both frontend and backend TypeScript
    - Run: Backend serves both API and frontend on single port (5000)
-   - Fixed Express 5.x wildcard route compatibility issue
+   - Fixed Express 5.x wildcard route compatibility (uses middleware instead of route)
+
+7. **API Configuration Fixes**:
+   - Fixed ACV Impacts endpoint URL (was pointing to wrong router)
+   - Simplified API base URL to use relative URLs in all environments
+   - Added Create React App proxy to forward /api requests to backend in development
 
 ## Development
 

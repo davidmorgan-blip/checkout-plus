@@ -1,17 +1,7 @@
 const getApiBaseUrl = () => {
-  if (process.env.NODE_ENV === 'production') {
-    return '';
-  }
-  
-  const replitDomain = process.env.REACT_APP_REPLIT_DEV_DOMAIN;
-  if (replitDomain) {
-    const port = window.location.port || '5000';
-    const url = window.location.origin;
-    const baseUrl = url.replace(`:${port}`, ':3001');
-    return baseUrl;
-  }
-  
-  return 'http://localhost:3001';
+  // In development, use empty string to leverage the proxy in package.json
+  // In production, also use empty string for same-origin requests
+  return '';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -20,7 +10,7 @@ export const API_ENDPOINTS = {
   ANALYTICS_OVERVIEW: `${API_BASE_URL}/api/analytics/overview`,
   ANALYTICS_MERCHANTS: `${API_BASE_URL}/api/analytics/merchants`,
   ANALYTICS_VOLUME: `${API_BASE_URL}/api/analytics/volume`,
-  ACV_IMPACTS: `${API_BASE_URL}/api/analytics/acv-impacts`,
+  ACV_IMPACTS: `${API_BASE_URL}/api/net-revenue/acv-impacts`,
   NET_REVENUE: `${API_BASE_URL}/api/net-revenue/net-revenue`,
   NET_REVENUE_EXPORT: `${API_BASE_URL}/api/net-revenue/net-revenue/export`,
   UPLOAD_STATUS: `${API_BASE_URL}/api/upload/status`,

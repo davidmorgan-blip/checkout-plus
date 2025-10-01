@@ -52,5 +52,6 @@
   },
   "devDependencies": {
     "@craco/craco": "^7.1.0"
-  }
+  },
+  "proxy": "http://localhost:3001"
 }
