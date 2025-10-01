@@ -29,7 +29,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.set('trust proxy', 1);
 
 const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? [process.env.FRONTEND_URL || 'https://checkout-plus.replit.app']
+  ? [process.env.FRONTEND_URL || 'https://checkout-plus-dashboard.replit.app']
   : ['http://localhost:5000', 'http://localhost:3000'];
 
 const getSessionStore = () => {
