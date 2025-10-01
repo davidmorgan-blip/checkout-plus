@@ -218,7 +218,12 @@ export default function SimpleDashboard({ user }: SimpleDashboardProps) {
         'seasonality': API_ENDPOINTS.UPLOAD_SEASONALITY,
       };
 
-      const response = await fetch(endpointMap[endpoint] || `http://localhost:3001/api/upload/${endpoint}`, {
+      const url = endpointMap[endpoint];
+      if (!url) {
+        throw new Error(`Unknown endpoint: ${endpoint}`);
+      }
+
+      const response = await fetch(url, {
         method: 'POST',
         body: formData,
       });
