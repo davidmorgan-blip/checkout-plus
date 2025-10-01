@@ -3,6 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
+import pg from 'pg';
+import connectPgSimple from 'connect-pg-simple';
 import { database } from './utils/database';
 import uploadRoutes from './routes/upload';
 import analyticsRoutes from './routes/analytics';
@@ -30,6 +32,35 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [process.env.FRONTEND_URL || 'https://checkout-plus.replit.app']
   : ['http://localhost:5000', 'http://localhost:3000'];
 
+const getSessionStore = () => {
+  if (process.env.NODE_ENV === 'production') {
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL is required in production for persistent session storage');
+    }
+    
+    const PgSession = connectPgSimple(session);
+    
+    const sslConfig = process.env.DATABASE_URL.includes('localhost')
+      ? undefined
+      : (process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'false'
+          ? { rejectUnauthorized: false }
+          : { rejectUnauthorized: true });
+    
+    const pgPool = new pg.Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: sslConfig
+    });
+    
+    return new PgSession({
+      pool: pgPool,
+      tableName: 'session',
+      createTableIfMissing: true
+    });
+  }
+  
+  return undefined;
+};
+
 // Middleware
 app.use(cors({
   origin: (origin, callback) => {
@@ -43,6 +74,7 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(session({
+  store: getSessionStore(),
   secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? (() => { throw new Error('SESSION_SECRET required in production'); })() : 'dev-secret-change-me'),
   resave: false,
   saveUninitialized: false,

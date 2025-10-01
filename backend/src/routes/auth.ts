@@ -2,30 +2,26 @@ import express, { Request, Response } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import crypto from 'crypto';
 
-declare module 'express-session' {
-  interface SessionData {
-    user?: {
-      email: string;
-      name: string;
-      picture?: string;
-      domain: string;
-    };
-    oauthState?: string;
-  }
-}
-
 const router = express.Router();
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
-
-const getRedirectUri = (req: Request): string => {
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${protocol}://${host}/auth/google/callback`;
-};
-
 const REQUIRED_DOMAIN = 'loopreturns.com';
+
+const getRedirectUri = (): string => {
+  if (process.env.OAUTH_REDIRECT_URI) {
+    return process.env.OAUTH_REDIRECT_URI;
+  }
+  
+  if (process.env.NODE_ENV === 'production') {
+    if (!process.env.REPLIT_DEPLOYMENT_URL) {
+      throw new Error('Production requires OAUTH_REDIRECT_URI or REPLIT_DEPLOYMENT_URL to be set');
+    }
+    return `${process.env.REPLIT_DEPLOYMENT_URL}/auth/google/callback`;
+  }
+  
+  return 'http://localhost:3001/auth/google/callback';
+};
 
 router.get('/google', (req: Request, res: Response) => {
   try {
@@ -35,7 +31,7 @@ router.get('/google', (req: Request, res: Response) => {
       req.session.oauthState = state;
     }
 
-    const redirectUri = getRedirectUri(req);
+    const redirectUri = getRedirectUri();
     
     const oauth2Client = new OAuth2Client(
       GOOGLE_CLIENT_ID,
@@ -73,7 +69,7 @@ router.get('/google/callback', async (req: Request, res: Response) => {
   delete req.session?.oauthState;
 
   try {
-    const redirectUri = getRedirectUri(req);
+    const redirectUri = getRedirectUri();
     
     const oauth2Client = new OAuth2Client(
       GOOGLE_CLIENT_ID,
@@ -100,16 +96,31 @@ router.get('/google/callback', async (req: Request, res: Response) => {
       return res.redirect(`/?error=invalid_domain&domain=${payload.hd}`);
     }
 
-    if (req.session) {
-      req.session.user = {
-        email: payload.email!,
-        name: payload.name!,
-        picture: payload.picture,
-        domain: payload.hd!
-      };
-    }
+    const userData = {
+      email: payload.email!,
+      name: payload.name!,
+      picture: payload.picture,
+      domain: payload.hd!
+    };
 
-    res.redirect('/');
+    req.session?.regenerate((err: Error | undefined) => {
+      if (err) {
+        console.error('Session regeneration error:', err);
+        return res.redirect('/?error=auth_failed');
+      }
+
+      if (req.session) {
+        req.session.user = userData;
+      }
+
+      req.session?.save((saveErr: Error | undefined) => {
+        if (saveErr) {
+          console.error('Session save error:', saveErr);
+          return res.redirect('/?error=auth_failed');
+        }
+        res.redirect('/');
+      });
+    });
   } catch (error) {
     console.error('OAuth callback error:', error);
     res.redirect('/?error=auth_failed');
