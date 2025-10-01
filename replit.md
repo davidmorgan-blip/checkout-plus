@@ -82,6 +82,14 @@ checkout-plus/
      - Priority: OAUTH_REDIRECT_URI env → REPLIT_DEPLOYMENT_URL (prod) → localhost:3001 (dev)
      - Production throws error if neither OAUTH_REDIRECT_URI nor REPLIT_DEPLOYMENT_URL is set
    - **Session Fixation Prevention**: Added session.regenerate() after successful OAuth verification
+
+10. **Production API URL Fix** (Oct 1, 2025):
+   - Fixed hardcoded localhost URLs causing ERR_CONNECTION_REFUSED in production
+   - Removed duplicate api.js file (causing import conflicts with api.ts)
+   - Frontend now uses relative URLs for all API calls via api.ts
+   - In development: Proxies to localhost:3001 backend via CRA proxy
+   - In production: Uses same-origin requests (both frontend and backend on same domain)
+   - Removed hardcoded localhost fallback in SimpleDashboard upload function
    - **Persistent Session Storage**: Configured PostgreSQL session store for production
      - Uses connect-pg-simple with automatic session table creation
      - Requires DATABASE_URL environment variable in production (fails fast if missing)
